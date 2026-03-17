@@ -1,0 +1,133 @@
+version: "3.9"
+
+# ──────────────────────────────────────────────
+#  IP Camera System
+#  Relocate by copying this entire directory
+#  (and optionally the recordings directory).
+# ──────────────────────────────────────────────
+
+services:
+
+  # ── Continuous recorder + HLS live-stream generator ──────────────────────
+  recorder:
+    build:
+      context: ./recorder
+    container_name: ipcam-recorder
+    restart: unless-stopped
+    network_mode: host          # must reach cameras on 192.168.100.0/24
+    volumes:
+      - ./config:/config:ro
+      - ${RECORDINGS_DIR:-./recordings}:/recordings
+      - ${HLS_DIR:-./hls}:/hls
+    environment:
+      - CONFIG_PATH=/config/cameras.yml
+      - TZ=${TIMEZONE:-UTC}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # ── ONVIF WS-Discovery scanner ────────────────────────────────────────────
+  scanner:
+    build:
+      context: ./scanner
+    container_name: ipcam-scanner
+    restart: unless-stopped
+    network_mode: host          # needs multicast access for WS-Discovery
+    volumes:
+      - ./config:/config
+    environment:
+      - CONFIG_PATH=/config/cameras.yml
+      - ONVIF_USERNAME=${ONVIF_USERNAME:-admin}
+      - ONVIF_PASSWORD=${ONVIF_PASSWORD:-}
+      - CAMERA_SUBNET=${CAMERA_SUBNET:-192.168.100.0/24}
+      - TZ=${TIMEZONE:-UTC}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Web dashboard (Flask API) ─────────────────────────────────────────────
+  dashboard:
+    build:
+      context: ./dashboard
+    container_name: ipcam-dashboard
+    restart: unless-stopped
+    expose:
+      - "8080"
+    volumes:
+      - ./config:/config
+      - ${RECORDINGS_DIR:-./recordings}:/recordings
+      - ${HLS_DIR:-./hls}:/hls:ro
+      - ${EXCERPTS_DIR:-./excerpts}:/excerpts
+      - ${VOD_DIR:-./vod}:/vod
+    environment:
+      - RECORDINGS_PATH=/recordings
+      - HLS_PATH=/hls
+      - EXCERPTS_PATH=/excerpts
+      - VOD_PATH=/vod
+      - CONFIG_PATH=/config/cameras.yml
+      - DVR_USERNAME=${DVR_USERNAME:-admin}
+      - DVR_PASSWORD=${DVR_PASSWORD:-}
+      - TZ=${TIMEZONE:-UTC}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── DVR3 IE-compatibility viewer (Chromium + noVNC, port 6080) ───────────────
+  # TigerSecu DVR3 (192.168.1.253) requires IE / a native app for its WebSocket
+  # stream.  This container runs Chromium with an IE11 user-agent and relaxed
+  # security settings behind a noVNC web interface so it can be opened directly
+  # from the dashboard without leaving the browser.
+  # Access: http://<host>:6080  — no nginx proxy needed (no sub-path issues).
+  dvr3-viewer:
+    image: lscr.io/linuxserver/chromium:latest
+    container_name: ipcam-dvr3-viewer
+    restart: unless-stopped
+    security_opt:
+      - seccomp:unconfined    # required for Chromium sandbox inside Docker
+    shm_size: "512mb"
+    ports:
+      - "6080:3000"           # noVNC web UI on host port 6080
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TIMEZONE:-UTC}
+      # IE11 user-agent + relaxed security so DVR pages load without ActiveX errors
+      - CHROME_CLI=--no-sandbox
+          --ignore-certificate-errors
+          --allow-running-insecure-content
+          --disable-web-security
+          --user-agent="Mozilla/5.0 (compatible; MSIE 11.0; Windows NT 10.0; WOW64; Trident/7.0; rv:11.0) like Gecko"
+          https://192.168.1.253
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Nginx reverse proxy + static file server ──────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: ipcam-nginx
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ${RECORDINGS_DIR:-./recordings}:/recordings:ro
+      - ${HLS_DIR:-./hls}:/hls:ro
+      - ${EXCERPTS_DIR:-./excerpts}:/excerpts:ro
+    depends_on:
+      - dashboard
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Config temp files
+config/cameras.tmp
+
+# Runtime / large data dirs
+recordings/
+excerpts/
+hls/
+
+# Migration archives
+*.tar.gz
+*.tar
+
+# Logs
+*.log
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets — never commit
+.env
+nginx/ssl/

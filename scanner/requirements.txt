@@ -1,0 +1,5 @@
+PyYAML==6.0.1
+onvif-zeep==0.2.12
+wsdiscovery==2.1.2
+requests==2.31.0
+zeep==4.2.1

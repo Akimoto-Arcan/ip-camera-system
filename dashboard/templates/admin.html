@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Camera Admin</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.min.js"></script>
+  <style>
+    :root {
+      --bg0:    #07090d; --bg1:    #0d1117; --bg2:    #111820;
+      --bg3:    #16202d; --bg4:    #1c2b3a; --border: #1e2d3d;
+      --text1:  #e2e8f0; --text2:  #8fa3b1; --text3:  #4a6070;
+      --green:  #10b981; --red:    #ef4444; --yellow: #f59e0b;
+      --blue:   #3b82f6; --radius: 8px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg0); color: var(--text1);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px; min-height: 100vh; padding: 28px 24px;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────── */
+    header {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 28px;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 1.15rem; font-weight: 600; }
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+    .header-right a { color: var(--text2); text-decoration: none; font-size: .85rem; }
+    .header-right a:hover { color: var(--text1); }
+    .user-chip {
+      color: var(--text3); font-size: .78rem;
+      background: var(--bg3); border: 1px solid var(--border);
+      padding: 3px 10px; border-radius: 99px;
+    }
+    .btn-signout {
+      background: none; border: 1px solid var(--border);
+      color: var(--text2); padding: 4px 12px; border-radius: 6px;
+      cursor: pointer; font-size: .8rem;
+    }
+    .btn-signout:hover { border-color: var(--text2); color: var(--text1); }
+
+    /* ── Table ──────────────────────────────────────────────────────── */
+    .camera-table { width: 100%; border-collapse: collapse; background: var(--bg2); border-radius: var(--radius); overflow: hidden; }
+    .camera-table th {
+      background: var(--bg3); color: var(--text2); font-weight: 500;
+      font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
+      padding: 10px 14px; text-align: left;
+    }
+    .camera-table td { padding: 12px 14px; border-top: 1px solid var(--border); vertical-align: middle; }
+    .camera-table tr:hover td { background: var(--bg3); }
+
+    .cam-name { font-weight: 600; }
+    .cam-ip   { color: var(--text3); font-size: .78rem; margin-top: 2px; font-family: monospace; }
+
+    .status-pill {
+      display: inline-block; padding: 2px 9px; border-radius: 99px;
+      font-size: .72rem; font-weight: 600;
+    }
+    .status-pill.recording { background: rgba(16,185,129,.15); color: var(--green); }
+    .status-pill.offline, .status-pill.error { background: rgba(239,68,68,.12); color: var(--red); }
+    .status-pill.connecting { background: rgba(245,158,11,.12); color: var(--yellow); }
+    .status-pill.disabled, .status-pill.unknown { background: rgba(100,116,139,.15); color: var(--text3); }
+
+    .rec-badge {
+      display: inline-block; padding: 1px 6px; background: var(--red);
+      color: #fff; border-radius: 3px; font-size: .62rem; font-weight: 700;
+      letter-spacing: .05em; animation: blink 1.4s ease-in-out infinite; margin-right: 4px;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    /* ── Toggle ─────────────────────────────────────────────────────── */
+    .toggle-wrap { display: flex; align-items: center; gap: 8px; }
+    .toggle { position: relative; width: 42px; height: 22px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; inset: 0;
+      background: var(--bg4); border: 1px solid var(--border);
+      border-radius: 99px; cursor: pointer; transition: background .2s, border-color .2s;
+    }
+    .toggle-slider::before {
+      content: ''; position: absolute;
+      width: 14px; height: 14px; left: 3px; top: 3px;
+      background: var(--text3); border-radius: 50%;
+      transition: transform .2s, background .2s;
+    }
+    .toggle input:checked + .toggle-slider { background: rgba(59,130,246,.2); border-color: var(--blue); }
+    .toggle input:checked + .toggle-slider::before { background: var(--blue); transform: translateX(20px); }
+    .toggle-label { color: var(--text2); font-size: .82rem; }
+    .toggle-label.on { color: var(--blue); }
+
+    /* ── Action buttons ─────────────────────────────────────────────── */
+    .actions { display: flex; gap: 6px; }
+    .btn-sm {
+      padding: 5px 12px; border-radius: 5px; font-size: .8rem;
+      border: 1px solid var(--border); background: var(--bg3);
+      color: var(--text1); cursor: pointer; white-space: nowrap;
+      transition: background .15s, border-color .15s;
+    }
+    .btn-sm:hover { background: var(--bg4); border-color: var(--text3); }
+    .btn-sm.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .btn-sm.primary:hover { opacity: .85; }
+
+    /* ── Video modal ─────────────────────────────────────────────────── */
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.85); z-index: 100;
+      align-items: center; justify-content: center; padding: 20px;
+    }
+    .modal-backdrop.open { display: flex; }
+
+    .video-modal {
+      background: var(--bg1); border: 1px solid var(--border);
+      border-radius: var(--radius); width: min(960px, 100%);
+      max-height: 90vh; display: flex; flex-direction: column;
+    }
+    .modal-header {
+      display: flex; align-items: center; padding: 12px 16px;
+      border-bottom: 1px solid var(--border); gap: 10px;
+    }
+    .modal-header h2 { font-size: .95rem; font-weight: 600; flex: 1; }
+    .modal-close {
+      background: none; border: none; color: var(--text2);
+      font-size: 1.3rem; cursor: pointer; padding: 0 4px; line-height: 1;
+    }
+    .modal-close:hover { color: var(--text1); }
+    .video-wrap { position: relative; background: #000; }
+    .video-wrap video {
+      width: 100%; max-height: 65vh; display: block; object-fit: contain;
+    }
+
+    /* ── Watch modal ─────────────────────────────────────────────────── */
+    .watch-modal {
+      background: var(--bg1); border: 1px solid var(--border);
+      border-radius: var(--radius); width: min(480px, 100%);
+      display: flex; flex-direction: column;
+    }
+    .watch-body { padding: 16px; }
+    .watch-label { color: var(--text2); font-size: .78rem; margin-bottom: 6px; }
+    .date-pills { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; min-height: 28px; }
+    .date-pill {
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text1); border-radius: 4px; padding: 3px 10px;
+      font-size: .76rem; cursor: pointer;
+    }
+    .date-pill:hover { border-color: var(--blue); color: var(--blue); }
+    .dt-row { display: flex; gap: 8px; align-items: center; }
+    .dt-row input[type=datetime-local] {
+      flex: 1; background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text1); padding: 8px 10px;
+      font-size: .85rem; outline: none;
+    }
+    .dt-row input:focus { border-color: var(--blue); }
+    .watch-footer { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+
+    /* ── Toast ───────────────────────────────────────────────────────── */
+    .toast {
+      position: fixed; bottom: 20px; right: 20px;
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text1); padding: 9px 14px; border-radius: var(--radius);
+      font-size: .82rem; opacity: 0; transform: translateY(6px);
+      transition: opacity .2s, transform .2s; pointer-events: none; z-index: 999;
+    }
+    .toast.show { opacity: 1; transform: none; }
+    .loading { color: var(--text3); padding: 40px; text-align: center; }
+
+    /* ── Orphans section ─────────────────────────────────────────────── */
+    .section-title {
+      font-size: .75rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .07em; color: var(--text3); margin-bottom: 10px;
+    }
+    .orphan-row {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px 16px; margin-bottom: 8px;
+    }
+    .orphan-name { font-weight: 600; flex: 1; }
+    .orphan-size { color: var(--text3); font-size: .8rem; }
+    .btn-danger {
+      padding: 5px 12px; border-radius: 5px; font-size: .8rem;
+      border: 1px solid rgba(239,68,68,.4); background: rgba(239,68,68,.1);
+      color: var(--red); cursor: pointer; white-space: nowrap;
+    }
+    .btn-danger:hover { background: rgba(239,68,68,.2); }
+
+    /* ── Category organizer ──────────────────────────────────────────── */
+    .org-wrap { margin-top: 0; }
+
+    /* ── Context menu ────────────────────────────────────────────────── */
+    #ctx-menu {
+      display: none; position: fixed; z-index: 500;
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+      min-width: 190px; box-shadow: 0 6px 24px rgba(0,0,0,.6);
+    }
+    .ctx-cam-label {
+      padding: 8px 14px 6px; font-size: .72rem; font-weight: 600;
+      color: var(--text3); text-transform: uppercase; letter-spacing: .06em;
+      border-bottom: 1px solid var(--border);
+    }
+    .ctx-item {
+      padding: 9px 16px; font-size: .82rem; cursor: pointer;
+      color: var(--text1); transition: background .1s; display: flex; align-items: center; gap: 8px;
+    }
+    .ctx-item:hover { background: var(--bg4); }
+    .ctx-item.danger { color: var(--red); }
+    .ctx-divider { height: 1px; background: var(--border); }
+    .org-toolbar {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+    }
+    .org-toolbar-title {
+      font-size: .75rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .07em; color: var(--text3); flex: 1;
+    }
+    .org-cats { display: flex; flex-direction: column; gap: 14px; }
+
+    .org-cat {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .org-cat-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+    }
+    .org-cat-name {
+      font-weight: 600; font-size: .88rem; flex: 1;
+      outline: none; background: transparent; border: none;
+      color: var(--text1); cursor: text;
+    }
+    .org-cat-name:focus {
+      background: var(--bg3); border-radius: 4px; padding: 2px 6px;
+    }
+    .org-cat-body { padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; }
+
+    .org-subcat {
+      border: 1px solid var(--border); border-radius: 6px; background: var(--bg3);
+    }
+    .org-subcat-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 12px; border-bottom: 1px solid var(--border);
+    }
+    .org-subcat-name {
+      font-size: .8rem; font-weight: 600; flex: 1; color: var(--text2);
+      outline: none; background: transparent; border: none; cursor: text;
+    }
+    .org-subcat-name:focus {
+      background: var(--bg4); border-radius: 3px; padding: 1px 5px; color: var(--text1);
+    }
+    .org-subcat-chips { padding: 8px 10px; display: flex; flex-wrap: wrap; gap: 6px; min-height: 40px; }
+
+    /* Direct-cameras zone (no subcategory, sits directly inside the category) */
+    .org-direct-chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 36px; padding: 4px 0; }
+
+    /* Drop zone highlight */
+    .drop-zone { transition: background .12s; border-radius: 4px; }
+    .drop-zone.drag-over { background: rgba(59,130,246,.12); outline: 1px dashed var(--blue); }
+
+    /* Section drag handle */
+    .section-drag-handle {
+      color: var(--text3); cursor: grab; font-size: .95rem; padding: 0 2px;
+      flex-shrink: 0; user-select: none; line-height: 1;
+    }
+    .section-drag-handle:hover { color: var(--text2); }
+    .section-drag-handle:active { cursor: grabbing; }
+    .org-cat.section-dragging, .org-subcat.section-dragging { opacity: .45; }
+    .org-cat.drop-before  { box-shadow: 0 -3px 0 0 var(--blue); }
+    .org-cat.drop-after   { box-shadow: 0  3px 0 0 var(--blue); }
+    .org-subcat.drop-before { box-shadow: 0 -2px 0 0 var(--blue); }
+    .org-subcat.drop-after  { box-shadow: 0  2px 0 0 var(--blue); }
+    .org-subcat-wrap.drop-target-empty { outline: 2px dashed var(--blue); border-radius: 4px; min-height: 24px; }
+
+    /* Camera chip */
+    .cam-chip {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--bg4); border: 1px solid var(--border);
+      border-radius: 5px; padding: 4px 10px;
+      font-size: .78rem; cursor: grab; user-select: none;
+      transition: border-color .1s, box-shadow .1s;
+    }
+    .cam-chip:active { cursor: grabbing; }
+    .cam-chip.dragging { opacity: .4; }
+    .cam-chip-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    }
+    .cam-chip-dot.recording { background: var(--green); }
+    .cam-chip-dot.offline   { background: var(--red); }
+    .cam-chip-dot.online    { background: var(--green); }
+    .cam-chip-dot.unknown, .cam-chip-dot.connecting { background: var(--text3); }
+
+    /* Unassigned section */
+    .org-unassigned {
+      background: var(--bg2); border: 1px dashed var(--border);
+      border-radius: var(--radius); padding: 12px 14px;
+    }
+    .org-unassigned-label {
+      font-size: .72rem; color: var(--text3); margin-bottom: 8px;
+      text-transform: uppercase; letter-spacing: .06em;
+    }
+
+    /* Inline add inputs */
+    .org-add-row { display: flex; gap: 6px; margin-top: 4px; }
+    .org-add-input {
+      flex: 1; background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 5px; color: var(--text1); padding: 5px 10px;
+      font-size: .8rem; outline: none;
+    }
+    .org-add-input:focus { border-color: var(--blue); }
+    .btn-xs {
+      padding: 4px 10px; border-radius: 4px; font-size: .75rem;
+      border: 1px solid var(--border); background: var(--bg3);
+      color: var(--text2); cursor: pointer; white-space: nowrap;
+    }
+    .btn-xs:hover { color: var(--text1); border-color: var(--text2); }
+    .btn-xs.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .btn-xs.danger  { border-color: rgba(239,68,68,.4); color: var(--red); }
+    .btn-xs.danger:hover { background: rgba(239,68,68,.15); }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Camera Admin</h1>
+  <div class="header-right">
+    <button class="btn-sm" id="scan-btn" onclick="triggerScan()">⟳ Scan for cameras</button>
+    <a href="/">← Dashboard</a>
+    <span class="user-chip">{{ username }}</span>
+    <form method="post" action="/admin/logout">
+      <button type="submit" class="btn-signout">Sign out</button>
+    </form>
+  </div>
+</header>
+
+<!-- Category organizer -->
+<div class="org-wrap">
+  <div class="org-toolbar">
+    <span class="org-toolbar-title">Category Organizer — drag cameras to organise</span>
+    <button class="btn-xs primary" onclick="orgAddCategory()">+ New Category</button>
+  </div>
+  <div class="org-cats" id="org-cats"></div>
+  <div class="org-unassigned" id="org-unassigned" style="margin-top:14px;">
+    <div class="org-unassigned-label">Unassigned cameras</div>
+    <div class="org-direct-chips drop-zone" id="org-unassigned-chips"
+         data-cat="" data-sub=""
+         ondragover="orgDragOver(event)" ondrop="orgDrop(event)" ondragleave="orgDragLeave(event)"></div>
+  </div>
+  <div id="orphans-wrap" style="margin-top:14px;"></div>
+</div>
+
+<!-- Right-click context menu -->
+<div id="ctx-menu">
+  <div class="ctx-cam-label" id="ctx-cam-label">Camera</div>
+  <div class="ctx-item" onclick="ctxLive()">▶ Live View</div>
+  <div class="ctx-item" id="ctx-rec-btn" onclick="ctxRec()">📼 Recordings</div>
+  <div class="ctx-divider"></div>
+  <div class="ctx-item" id="ctx-vis-btn" onclick="ctxToggleVisible()">👁 Show on Dashboard</div>
+  <div class="ctx-item" onclick="ctxEdit()">✎ Edit</div>
+  <div class="ctx-divider"></div>
+  <div class="ctx-item danger" id="ctx-del-btn" onclick="ctxDeleteRec()">🗑 Delete Recordings</div>
+</div>
+
+<!-- Camera edit modal -->
+<div class="modal-backdrop" id="edit-modal">
+  <div class="watch-modal" style="width:min(500px,100%);">
+    <div class="modal-header">
+      <h2>Edit Camera</h2>
+      <button class="modal-close" onclick="closeModal('edit-modal')">✕</button>
+    </div>
+    <div class="watch-body" style="display:grid;gap:10px;">
+      <input type="hidden" id="edit-orig-name">
+      <div>
+        <div class="watch-label">Name</div>
+        <input type="text" id="edit-name" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text1);padding:8px 10px;font-size:.85rem;outline:none;">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div>
+          <div class="watch-label">Category</div>
+          <input type="text" id="edit-category" placeholder="e.g. Building 1" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text1);padding:8px 10px;font-size:.85rem;outline:none;">
+        </div>
+        <div>
+          <div class="watch-label">Sub-Category</div>
+          <input type="text" id="edit-subcategory" placeholder="e.g. UD3" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text1);padding:8px 10px;font-size:.85rem;outline:none;">
+        </div>
+      </div>
+      <div>
+        <div class="watch-label">IP Address</div>
+        <input type="text" id="edit-ip" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text1);padding:8px 10px;font-size:.85rem;outline:none;font-family:monospace;">
+      </div>
+      <div>
+        <div class="watch-label">RTSP URL</div>
+        <input type="text" id="edit-rtsp" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text1);padding:8px 10px;font-size:.85rem;outline:none;font-family:monospace;">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div>
+          <div class="watch-label">ONVIF Port</div>
+          <input type="number" id="edit-onvif" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text1);padding:8px 10px;font-size:.85rem;outline:none;">
+        </div>
+        <div>
+          <div class="watch-label">Segment Duration (s)</div>
+          <input type="number" id="edit-segment" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text1);padding:8px 10px;font-size:.85rem;outline:none;">
+        </div>
+      </div>
+    </div>
+    <div class="watch-footer">
+      <button class="btn-sm" onclick="closeModal('edit-modal')">Cancel</button>
+      <button class="btn-sm primary" id="edit-save-btn" onclick="saveEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Video modal -->
+<div class="modal-backdrop" id="video-modal">
+  <div class="video-modal">
+    <div class="modal-header">
+      <h2 id="video-title"></h2>
+      <button class="modal-close" onclick="closeVideoModal()">✕</button>
+    </div>
+    <div class="video-wrap"><video id="video-player" controls></video></div>
+  </div>
+</div>
+
+<!-- Watch/recordings modal -->
+<div class="modal-backdrop" id="watch-modal">
+  <div class="watch-modal">
+    <div class="modal-header">
+      <h2 id="watch-title">Watch Recordings</h2>
+      <button class="modal-close" onclick="closeModal('watch-modal')">✕</button>
+    </div>
+    <div class="watch-body">
+      <div class="watch-label">Available dates</div>
+      <div class="date-pills" id="date-pills"></div>
+      <div class="watch-label">Start from</div>
+      <div class="dt-row">
+        <input type="datetime-local" id="watch-dt">
+      </div>
+    </div>
+    <div class="watch-footer">
+      <button class="btn-sm" onclick="closeModal('watch-modal')">Cancel</button>
+      <button class="btn-sm primary" id="watch-play-btn" onclick="startVod()">▶ Play</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let _cameras   = {};
+let _recSummary = {};
+let _watchCam  = '';
+let _hlsInst   = null;
+
+/* ── Data loading ──────────────────────────────────────────────────── */
+async function load() {
+  const [statusData, recData] = await Promise.all([
+    fetch('/api/status').then(r => r.json()).catch(() => ({})),
+    fetch('/api/recordings/summary').then(r => r.json()).catch(() => ({})),
+  ]);
+  _cameras    = statusData.cameras || {};
+  _recSummary = recData;
+}
+
+/* ── Visibility toggle ─────────────────────────────────────────────── */
+async function setVisible(name, visible) {
+  const lbl = document.getElementById(`lbl-${name}`);
+  try {
+    const res = await fetch(`/api/cameras/${encodeURIComponent(name)}/visible`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visible })
+    });
+    const d = await res.json();
+    if (d.success) {
+      if (lbl) { lbl.textContent = visible ? 'Visible' : 'Hidden'; lbl.className = `toggle-label ${visible ? 'on' : ''}`; }
+      toast(`${name}: ${visible ? 'shown on dashboard' : 'hidden from dashboard'}`);
+    } else { toast('Error: ' + (d.error || 'unknown')); }
+  } catch { toast('Request failed'); }
+}
+
+/* ── Live view ─────────────────────────────────────────────────────── */
+function openLive(name) {
+  openVideo(`${name} — Live`, `/hls/${encodeURIComponent(name)}/index.m3u8`, true);
+}
+
+function openVideo(title, src, isHls) {
+  destroyHls();
+  document.getElementById('video-title').textContent = title;
+  const video = document.getElementById('video-player');
+  video.src = '';
+
+  if (isHls && Hls.isSupported()) {
+    _hlsInst = new Hls({ enableWorker: false, lowLatencyMode: true });
+    _hlsInst.loadSource(src);
+    _hlsInst.attachMedia(video);
+    _hlsInst.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+  } else if (isHls && video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = src;
+    video.play().catch(() => {});
+  } else if (!isHls) {
+    video.src = src;
+    video.play().catch(() => {});
+  }
+
+  document.getElementById('video-modal').classList.add('open');
+}
+
+function closeVideoModal() {
+  destroyHls();
+  const video = document.getElementById('video-player');
+  video.pause(); video.src = '';
+  document.getElementById('video-modal').classList.remove('open');
+}
+
+function destroyHls() {
+  if (_hlsInst) { _hlsInst.destroy(); _hlsInst = null; }
+}
+
+/* ── Recordings watch ──────────────────────────────────────────────── */
+function openWatch(name) {
+  _watchCam = name;
+  document.getElementById('watch-title').textContent = `Watch — ${name}`;
+
+  const info = _recSummary[name];
+  const pills = document.getElementById('date-pills');
+  if (info && info.dates.length) {
+    const sorted = [...info.dates].sort().reverse();
+    pills.innerHTML = sorted.map(d =>
+      `<button class="date-pill" onclick="pickDate('${esc(d)}')">${esc(d)}</button>`
+    ).join('');
+    document.getElementById('watch-dt').value = `${sorted[0]}T00:00`;
+  } else {
+    pills.textContent = 'No recordings.';
+    document.getElementById('watch-dt').value = '';
+  }
+
+  const btn = document.getElementById('watch-play-btn');
+  btn.disabled = false; btn.textContent = '▶ Play';
+  document.getElementById('watch-modal').classList.add('open');
+}
+
+function pickDate(d) {
+  document.getElementById('watch-dt').value = `${d}T00:00`;
+  startVod();
+}
+
+async function startVod() {
+  const dtVal = document.getElementById('watch-dt').value;
+  if (!dtVal) { toast('Select a date and time'); return; }
+
+  const btn = document.getElementById('watch-play-btn');
+  btn.disabled = true; btn.textContent = 'Starting…';
+
+  try {
+    const r = await fetch(`/api/recordings/${encodeURIComponent(_watchCam)}/vod`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: dtVal }),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      toast(d.error || 'Could not start playback');
+      btn.disabled = false; btn.textContent = '▶ Play';
+      return;
+    }
+    closeModal('watch-modal');
+    const label = new Date(d.actual_start || dtVal).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+    openVideo(`${_watchCam} — ${label}`, d.url, true);
+    if (d.actual_start) toast(`Playing from ${new Date(d.actual_start).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`);
+  } catch {
+    toast('Network error');
+    btn.disabled = false; btn.textContent = '▶ Play';
+  }
+}
+
+/* ── Helpers ───────────────────────────────────────────────────────── */
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+document.getElementById('video-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeVideoModal();
+});
+document.getElementById('watch-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal('watch-modal');
+});
+
+let _toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ── Delete recordings ─────────────────────────────────────────────── */
+async function deleteRecordings(name) {
+  if (!confirm(`Delete ALL recordings for "${name}"?\n\nThis cannot be undone.`)) return;
+  try {
+    const r = await fetch(`/api/recordings/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    const d = await r.json();
+    if (d.success) {
+      toast(`Recordings for ${name} deleted`);
+      load();
+    } else {
+      toast('Error: ' + (d.error || 'unknown'));
+    }
+  } catch { toast('Request failed'); }
+}
+
+/* ── Orphaned recordings ───────────────────────────────────────────── */
+async function loadOrphans() {
+  try {
+    const r = await fetch('/api/recordings/orphans');
+    const orphans = await r.json();
+    const wrap = document.getElementById('orphans-wrap');
+    if (!orphans.length) { wrap.innerHTML = ''; return; }
+
+    wrap.innerHTML = `
+      <div class="section-title">Orphaned Recordings (no matching camera)</div>
+      ${orphans.map(o => `
+        <div class="orphan-row">
+          <div class="orphan-name">${esc(o.name)}</div>
+          <div class="orphan-size">💾 ${fmtSize(o.size_mb)}</div>
+          <button class="btn-danger" onclick="deleteRecordings('${esc(o.name)}')">🗑 Delete</button>
+        </div>`).join('')}`;
+  } catch { }
+}
+
+function fmtSize(mb) {
+  if (!mb || mb <= 0) return '0 MB';
+  if (mb >= 1024 * 1024) return (mb / 1024 / 1024).toFixed(2) + ' TB';
+  if (mb >= 1024)        return (mb / 1024).toFixed(2) + ' GB';
+  return mb.toFixed(1) + ' MB';
+}
+
+/* ── Camera edit ───────────────────────────────────────────────────── */
+async function openEdit(name) {
+  try {
+    const r = await fetch('/api/cameras');
+    const cams = await r.json();
+    const cam = cams.find(c => c.name === name);
+    if (!cam) { toast('Camera not found'); return; }
+    document.getElementById('edit-orig-name').value = name;
+    document.getElementById('edit-name').value = cam.name || '';
+    document.getElementById('edit-category').value = cam.category || '';
+    document.getElementById('edit-subcategory').value = cam.subcategory || '';
+    document.getElementById('edit-ip').value = cam.ip || '';
+    document.getElementById('edit-rtsp').value = cam.rtsp_url || '';
+    document.getElementById('edit-onvif').value = cam.onvif_port || 80;
+    document.getElementById('edit-segment').value = cam.segment_duration || 600;
+    const btn = document.getElementById('edit-save-btn');
+    btn.disabled = false; btn.textContent = 'Save';
+    document.getElementById('edit-modal').classList.add('open');
+  } catch { toast('Failed to load camera config'); }
+}
+
+async function saveEdit() {
+  const origName = document.getElementById('edit-orig-name').value;
+  const btn = document.getElementById('edit-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const r = await fetch(`/api/cameras/${encodeURIComponent(origName)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name:             document.getElementById('edit-name').value.trim(),
+        category:         document.getElementById('edit-category').value.trim(),
+        subcategory:      document.getElementById('edit-subcategory').value.trim(),
+        ip:               document.getElementById('edit-ip').value.trim(),
+        rtsp_url:         document.getElementById('edit-rtsp').value.trim(),
+        onvif_port:       parseInt(document.getElementById('edit-onvif').value) || 80,
+        segment_duration: parseInt(document.getElementById('edit-segment').value) || 600,
+      }),
+    });
+    const d = await r.json();
+    if (r.ok && d.success) {
+      toast('Camera saved');
+      closeModal('edit-modal');
+      load();
+    } else {
+      toast('Error: ' + (d.error || 'unknown'));
+      btn.disabled = false; btn.textContent = 'Save';
+    }
+  } catch {
+    toast('Request failed');
+    btn.disabled = false; btn.textContent = 'Save';
+  }
+}
+
+/* ── Scan for cameras ──────────────────────────────────────────────── */
+function triggerScan() {
+  const btn = document.getElementById('scan-btn');
+  btn.disabled = true; btn.textContent = '⟳ Scanning…';
+  toast('ONVIF scan started — runs every 5 min automatically');
+  setTimeout(() => {
+    btn.disabled = false; btn.textContent = '⟳ Scan for cameras';
+    load();
+  }, 5000);
+}
+
+document.getElementById('edit-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal('edit-modal');
+});
+
+async function loadAll() {
+  const [,, layout] = await Promise.all([
+    load(),
+    loadOrphans(),
+    fetch('/api/layout').then(r => r.json()).catch(() => ({})),
+  ]);
+  _layout = layout || {};
+  renderOrganizer();
+}
+loadAll();
+setInterval(loadAll, 5000);
+// Single delegate on #org-cats handles both category and subcategory drag
+_setupAllSectionDrag();
+
+/* ── Right-click context menu ──────────────────────────────────────── */
+let _ctxCam = null;
+
+function showCtxMenu(e, name) {
+  e.preventDefault();
+  e.stopPropagation();
+  _ctxCam = name;
+  const cam     = _cameras[name] || {};
+  const visible = cam.config?.visible !== false;
+  const hasRec  = !!_recSummary[name];
+
+  document.getElementById('ctx-cam-label').textContent = name;
+  document.getElementById('ctx-vis-btn').textContent  = visible ? '🔒 Hide from Dashboard' : '👁 Show on Dashboard';
+  document.getElementById('ctx-rec-btn').style.opacity = hasRec ? '1' : '.4';
+  document.getElementById('ctx-del-btn').style.opacity = hasRec ? '1' : '.4';
+
+  const menu = document.getElementById('ctx-menu');
+  menu.style.display = 'block';
+  const x = Math.min(e.clientX, window.innerWidth  - menu.offsetWidth  - 8);
+  const y = Math.min(e.clientY, window.innerHeight - menu.offsetHeight - 8);
+  menu.style.left = x + 'px';
+  menu.style.top  = y + 'px';
+}
+
+function hideCtxMenu() {
+  document.getElementById('ctx-menu').style.display = 'none';
+  _ctxCam = null;
+}
+
+document.addEventListener('click',       () => hideCtxMenu());
+document.addEventListener('keydown', e => { if (e.key === 'Escape') hideCtxMenu(); });
+document.addEventListener('contextmenu', e => { if (!e.target.closest('#ctx-menu') && !e.target.closest('.cam-chip')) hideCtxMenu(); });
+
+function ctxLive()          { if (_ctxCam) openLive(_ctxCam);   hideCtxMenu(); }
+function ctxEdit()          { if (_ctxCam) openEdit(_ctxCam);   hideCtxMenu(); }
+function ctxRec()           { if (_ctxCam && _recSummary[_ctxCam]) { openWatch(_ctxCam); hideCtxMenu(); } }
+function ctxDeleteRec()     { if (_ctxCam && _recSummary[_ctxCam]) { deleteRecordings(_ctxCam); hideCtxMenu(); } }
+function ctxToggleVisible() {
+  if (!_ctxCam) return;
+  const visible = _cameras[_ctxCam]?.config?.visible !== false;
+  setVisible(_ctxCam, !visible);
+  hideCtxMenu();
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   CATEGORY ORGANIZER
+   ════════════════════════════════════════════════════════════════════ */
+let _dragCam       = null; // currently dragged camera chip
+let _dragEl        = null; // currently dragged section element
+let _dragType      = null; // 'cat' | 'sub'
+let _dragParentCat = null; // parent category when dragging sub
+let _layout        = {};   // { category_order: [], subcategory_order: {} }
+
+function renderOrganizer() {
+  // Build: { cat: { sub: [names] } }  — '' cat = unassigned, '' sub = direct
+  const tree = {};
+  const unassigned = [];
+
+  Object.entries(_cameras).forEach(([name, cam]) => {
+    const cat = cam.config?.category    || '';
+    const sub = cam.config?.subcategory || '';
+    if (!cat) { unassigned.push(name); return; }
+    if (!tree[cat])      tree[cat] = {};
+    if (!tree[cat][sub]) tree[cat][sub] = [];
+    tree[cat][sub].push(name);
+  });
+
+  // Seed tree with layout-known empty categories/subcategories (persists across reloads)
+  const container = document.getElementById('org-cats');
+  (_layout.category_order || []).forEach(cat => {
+    if (!tree[cat]) tree[cat] = {};
+    ((_layout.subcategory_order || {})[cat] || []).forEach(sub => {
+      if (!tree[cat][sub]) tree[cat][sub] = [];
+    });
+  });
+
+  const existingCats = new Set(
+    [...container.querySelectorAll('[data-org-cat]')].map(el => el.dataset.orgCat)
+  );
+
+  // Sort categories by saved layout order, then alphabetically for new ones
+  const catOrderSaved = _layout.category_order || [];
+  const allCats = Object.keys(tree);
+  const orderedCats = [
+    ...catOrderSaved.filter(c => allCats.includes(c)),
+    ...allCats.filter(c => !catOrderSaved.includes(c)).sort(),
+  ];
+
+  orderedCats.forEach(cat => {
+    const subMap = tree[cat];
+    let catEl = container.querySelector(`[data-org-cat="${CSS.escape(cat)}"]`);
+    if (!catEl) {
+      catEl = document.createElement('div');
+      catEl.className = 'org-cat';
+      catEl.dataset.orgCat = cat;
+      catEl.innerHTML = _orgCatHtml(cat);
+      container.appendChild(catEl);
+      _addSectionDrag(catEl, 'cat', null);
+    }
+    existingCats.delete(cat);
+
+    // Direct cameras (sub = '')
+    const directZone = catEl.querySelector('.org-direct-chips');
+    const directNames = subMap[''] || [];
+    _syncChips(directZone, directNames);
+
+    // Subcategories — sorted by saved layout order
+    const subcatWrap = catEl.querySelector('.org-subcat-wrap');
+    const existingSubs = new Set(
+      [...subcatWrap.querySelectorAll('[data-org-sub]')].map(el => el.dataset.orgSub)
+    );
+    const subOrderSaved = (_layout.subcategory_order || {})[cat] || [];
+    const allSubs = Object.keys(subMap).filter(s => s !== '');
+    const orderedSubs = [
+      ...subOrderSaved.filter(s => allSubs.includes(s)),
+      ...allSubs.filter(s => !subOrderSaved.includes(s)).sort(),
+    ];
+
+    orderedSubs.forEach(sub => {
+      let subEl = subcatWrap.querySelector(`[data-org-sub="${CSS.escape(sub)}"]`);
+      if (!subEl) {
+        subEl = document.createElement('div');
+        subEl.className = 'org-subcat';
+        subEl.dataset.orgSub = sub;
+        subEl.innerHTML = _orgSubcatHtml(cat, sub);
+        subcatWrap.appendChild(subEl);
+        _addSectionDrag(subEl, 'sub', cat);
+      }
+      existingSubs.delete(sub);
+      _syncChips(subEl.querySelector('.org-subcat-chips'), subMap[sub]);
+    });
+    existingSubs.forEach(sub => {
+      const el = subcatWrap.querySelector(`[data-org-sub="${CSS.escape(sub)}"]`);
+      if (el) el.remove();
+    });
+  });
+
+  // Remove stale categories
+  existingCats.forEach(cat => {
+    const el = container.querySelector(`[data-org-cat="${CSS.escape(cat)}"]`);
+    if (el) el.remove();
+  });
+
+  // Unassigned
+  _syncChips(document.getElementById('org-unassigned-chips'), unassigned);
+}
+
+function _orgCatHtml(cat) {
+  return `
+    <div class="org-cat-header">
+      <span class="section-drag-handle" draggable="true" title="Drag to reorder">⠿</span>
+      <input class="org-cat-name" value="${esc(cat)}" title="Click to rename"
+        onblur="orgRenameCat(this,'${esc(cat)}')"
+        onkeydown="if(event.key==='Enter')this.blur()">
+      <button class="btn-xs" onclick="orgAddSubcat('${esc(cat)}')">+ Sub-Category</button>
+      <button class="btn-xs danger" onclick="orgDeleteCat('${esc(cat)}')">✕ Remove</button>
+    </div>
+    <div class="org-cat-body">
+      <div class="org-direct-chips drop-zone" data-cat="${esc(cat)}" data-sub=""
+           ondragover="orgDragOver(event)" ondrop="orgDrop(event)" ondragleave="orgDragLeave(event)"></div>
+      <div class="org-subcat-wrap"></div>
+      <div class="org-add-row" id="add-sub-row-${esc(cat)}" style="display:none">
+        <input class="org-add-input" id="add-sub-input-${esc(cat)}" placeholder="Sub-category name…"
+          onkeydown="if(event.key==='Enter')orgConfirmSubcat('${esc(cat)}');if(event.key==='Escape')orgCancelSubcat('${esc(cat)}')">
+        <button class="btn-xs primary" onclick="orgConfirmSubcat('${esc(cat)}')">Add</button>
+        <button class="btn-xs" onclick="orgCancelSubcat('${esc(cat)}')">Cancel</button>
+      </div>
+    </div>`;
+}
+
+function _orgSubcatHtml(cat, sub) {
+  return `
+    <div class="org-subcat-header">
+      <span class="section-drag-handle" draggable="true" title="Drag to reorder">⠿</span>
+      <input class="org-subcat-name" value="${esc(sub)}" title="Click to rename"
+        onblur="orgRenameSub(this,'${esc(cat)}','${esc(sub)}')"
+        onkeydown="if(event.key==='Enter')this.blur()">
+      <button class="btn-xs danger" onclick="orgDeleteSub('${esc(cat)}','${esc(sub)}')">✕</button>
+    </div>
+    <div class="org-subcat-chips drop-zone" data-cat="${esc(cat)}" data-sub="${esc(sub)}"
+         ondragover="orgDragOver(event)" ondrop="orgDrop(event)" ondragleave="orgDragLeave(event)"></div>`;
+}
+
+function _syncChips(zone, names) {
+  if (!zone) return;
+  const existing = new Set([...zone.querySelectorAll('.cam-chip')].map(c => c.dataset.cam));
+  names.forEach(name => {
+    const status = _cameras[name]?.status || 'unknown';
+    let chip = zone.querySelector(`.cam-chip[data-cam="${CSS.escape(name)}"]`);
+    if (!chip) {
+      chip = document.createElement('div');
+      chip.className = 'cam-chip';
+      chip.dataset.cam = name;
+      chip.draggable = true;
+      chip.addEventListener('dragstart', e => {
+        _dragCam = name;
+        setTimeout(() => chip.classList.add('dragging'), 0);
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      chip.addEventListener('dragend', () => {
+        chip.classList.remove('dragging');
+        _dragCam = null;
+      });
+      chip.addEventListener('contextmenu', e => showCtxMenu(e, name));
+      zone.appendChild(chip);
+    }
+    // Always refresh label + dot (status may have changed)
+    const visible = _cameras[name]?.config?.visible !== false;
+    chip.innerHTML = `<span class="cam-chip-dot ${status}"></span>${esc(name)}${visible ? '' : ' <span style="color:var(--text3);font-size:.68rem">(hidden)</span>'}`;
+    existing.delete(name);
+  });
+  existing.forEach(name => {
+    const el = zone.querySelector(`.cam-chip[data-cam="${CSS.escape(name)}"]`);
+    if (el) el.remove();
+  });
+}
+
+/* ── Section drag-to-reorder ────────────────────────────────────── */
+// _addSectionDrag: attach dragstart/dragend to the section element only.
+// The parent container handles dragover/drop (see _setupAllSectionDrag).
+function _addSectionDrag(sectionEl, type, parentCat) {
+  const handle = sectionEl.querySelector('.section-drag-handle');
+  if (!handle) return;
+
+  handle.addEventListener('dragstart', e => {
+    _dragEl        = sectionEl;
+    _dragType      = type;
+    _dragParentCat = parentCat || null;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setDragImage(sectionEl, 0, 0);
+    e.stopPropagation();
+    setTimeout(() => sectionEl.classList.add('section-dragging'), 0);
+  });
+
+  handle.addEventListener('dragend', () => {
+    sectionEl.classList.remove('section-dragging');
+    document.querySelectorAll('.drop-before,.drop-after,.drop-target-empty')
+      .forEach(el => el.classList.remove('drop-before', 'drop-after', 'drop-target-empty'));
+    _dragEl = null; _dragType = null; _dragParentCat = null;
+  });
+}
+
+// Single delegate handler on #org-cats for both category and subcategory reordering.
+function _setupAllSectionDrag() {
+  const container = document.getElementById('org-cats');
+
+  function _clearIndicators() {
+    container.querySelectorAll('.drop-before,.drop-after')
+      .forEach(el => el.classList.remove('drop-before', 'drop-after'));
+    container.querySelectorAll('.drop-target-empty')
+      .forEach(el => el.classList.remove('drop-target-empty'));
+  }
+
+  function _updateIndicator(siblings, clientY) {
+    siblings.forEach(el => el.classList.remove('drop-before', 'drop-after'));
+    if (!siblings.length) return;
+    let target = null;
+    for (const s of siblings) {
+      const r = s.getBoundingClientRect();
+      if (clientY < r.top + r.height / 2) { target = s; break; }
+    }
+    (target || siblings[siblings.length - 1])
+      .classList.add(target ? 'drop-before' : 'drop-after');
+  }
+
+  container.addEventListener('dragover', e => {
+    if (!_dragEl) return;
+    e.preventDefault();
+
+    if (_dragType === 'cat') {
+      const siblings = [...container.querySelectorAll(':scope > [data-org-cat]')]
+        .filter(el => el !== _dragEl);
+      _updateIndicator(siblings, e.clientY);
+    } else if (_dragType === 'sub') {
+      // Find whichever category the cursor is hovering over (allows cross-category move)
+      const allCats = [...container.querySelectorAll(':scope > [data-org-cat]')];
+      let hoveredCat = null;
+      for (const c of allCats) {
+        const r = c.getBoundingClientRect();
+        if (e.clientY >= r.top && e.clientY <= r.bottom) { hoveredCat = c; break; }
+      }
+      if (!hoveredCat) return;
+      _clearIndicators();
+      const siblings = [...hoveredCat.querySelectorAll('.org-subcat-wrap > [data-org-sub]')]
+        .filter(el => el !== _dragEl);
+      if (siblings.length) {
+        _updateIndicator(siblings, e.clientY);
+      } else {
+        // Empty target category — highlight the subcat-wrap as drop zone
+        hoveredCat.querySelector('.org-subcat-wrap').classList.add('drop-target-empty');
+      }
+    }
+  });
+
+  container.addEventListener('dragleave', e => {
+    if (!container.contains(e.relatedTarget)) _clearIndicators();
+  });
+
+  container.addEventListener('drop', e => {
+    if (!_dragEl) return;
+    e.preventDefault();
+    const before    = container.querySelector('.drop-before');
+    const after     = container.querySelector('.drop-after');
+    const emptyWrap = container.querySelector('.drop-target-empty');
+    _clearIndicators();
+    let newParentCatEl = null;
+    if (before) {
+      newParentCatEl = before.closest('[data-org-cat]');
+      before.parentElement.insertBefore(_dragEl, before);
+    } else if (after) {
+      newParentCatEl = after.closest('[data-org-cat]');
+      after.parentElement.insertBefore(_dragEl, after.nextSibling);
+    } else if (emptyWrap) {
+      newParentCatEl = emptyWrap.closest('[data-org-cat]');
+      emptyWrap.appendChild(_dragEl);
+    }
+
+    // If subcategory moved to a different parent category, update all cameras in it
+    if (_dragType === 'sub' && newParentCatEl) {
+      const newCat = newParentCatEl.dataset.orgCat;
+      const oldCat = _dragParentCat;
+      const sub    = _dragEl.dataset.orgSub;
+      if (newCat !== oldCat) {
+        // Collect cameras to update, patch local state optimistically
+        const toUpdate = [];
+        Object.entries(_cameras).forEach(([name, cam]) => {
+          if (cam.config?.category === oldCat && cam.config?.subcategory === sub) {
+            cam.config.category = newCat;
+            toUpdate.push(name);
+          }
+        });
+        // Send PUTs sequentially to avoid racing on cameras.yml
+        (async () => {
+          for (const name of toUpdate) {
+            await fetch(`/api/cameras/${encodeURIComponent(name)}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ category: newCat, subcategory: sub }),
+            }).catch(() => {});
+          }
+        })();
+      }
+    }
+
+    saveLayout();
+  });
+}
+
+function saveLayout() {
+  const container = document.getElementById('org-cats');
+  const catOrder = [...container.querySelectorAll(':scope > [data-org-cat]')]
+    .map(el => el.dataset.orgCat);
+  const subOrder = {};
+  catOrder.forEach(cat => {
+    const catEl = container.querySelector(`[data-org-cat="${CSS.escape(cat)}"]`);
+    const subs  = [...catEl.querySelectorAll('.org-subcat-wrap > [data-org-sub]')]
+      .map(el => el.dataset.orgSub);
+    if (subs.length) subOrder[cat] = subs;
+  });
+  _layout = { category_order: catOrder, subcategory_order: subOrder };
+  fetch('/api/layout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(_layout),
+  }).catch(() => {});
+}
+
+/* ── Drag/drop handlers (camera chips) ─────────────────────────── */
+function orgDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
+function orgDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+
+async function orgDrop(e) {
+  e.preventDefault();
+  const zone = e.currentTarget;
+  zone.classList.remove('drag-over');
+  if (!_dragCam) return;
+
+  const newCat = zone.dataset.cat;
+  const newSub = zone.dataset.sub;
+  const cam    = _cameras[_dragCam];
+  if (!cam) return;
+
+  const oldCat = cam.config?.category    || '';
+  const oldSub = cam.config?.subcategory || '';
+  if (oldCat === newCat && oldSub === newSub) return;
+
+  // Optimistic update
+  if (!_cameras[_dragCam].config) _cameras[_dragCam].config = {};
+  _cameras[_dragCam].config.category    = newCat;
+  _cameras[_dragCam].config.subcategory = newSub;
+
+  try {
+    const r = await fetch(`/api/cameras/${encodeURIComponent(_dragCam)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: newCat, subcategory: newSub }),
+    });
+    const d = await r.json();
+    if (!r.ok) { toast('Save failed: ' + (d.error || '')); load(); return; }
+    toast(`${_dragCam} → ${newCat || 'Unassigned'}${newSub ? ' / ' + newSub : ''}`);
+  } catch { toast('Network error'); load(); return; }
+
+  renderOrganizer();
+}
+
+/* ── Category management ────────────────────────────────────────── */
+function orgAddCategory() {
+  const name = prompt('New category name:');
+  if (!name || !name.trim()) return;
+  const cat = name.trim();
+  const container = document.getElementById('org-cats');
+  if (container.querySelector(`[data-org-cat="${CSS.escape(cat)}"]`)) {
+    toast('Category already exists'); return;
+  }
+  const el = document.createElement('div');
+  el.className = 'org-cat'; el.dataset.orgCat = cat;
+  el.innerHTML = _orgCatHtml(cat);
+  container.appendChild(el);
+  _addSectionDrag(el, 'cat', null);
+  _syncChips(el.querySelector('.org-direct-chips'), []);
+  saveLayout();
+}
+
+function orgDeleteCat(cat) {
+  const el = document.getElementById('org-cats').querySelector(`[data-org-cat="${CSS.escape(cat)}"]`);
+  if (!el) return;
+  const chips = [...el.querySelectorAll('.cam-chip')];
+  if (chips.length && !confirm(`Move all cameras in "${cat}" to Unassigned?`)) return;
+  const saves = chips.map(chip => fetch(`/api/cameras/${encodeURIComponent(chip.dataset.cam)}`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ category: '', subcategory: '' }),
+  }));
+  Promise.all(saves).then(() => load());
+  el.remove();
+  saveLayout();
+}
+
+/* ── Subcategory management ─────────────────────────────────────── */
+function orgAddSubcat(cat) {
+  const row = document.getElementById(`add-sub-row-${cat}`);
+  if (row) { row.style.display = 'flex'; document.getElementById(`add-sub-input-${cat}`).focus(); }
+}
+function orgCancelSubcat(cat) {
+  const row = document.getElementById(`add-sub-row-${cat}`);
+  if (row) { row.style.display = 'none'; document.getElementById(`add-sub-input-${cat}`).value = ''; }
+}
+function orgConfirmSubcat(cat) {
+  const input = document.getElementById(`add-sub-input-${cat}`);
+  const sub = input.value.trim();
+  if (!sub) { orgCancelSubcat(cat); return; }
+  const catEl = document.getElementById('org-cats').querySelector(`[data-org-cat="${CSS.escape(cat)}"]`);
+  const wrap  = catEl.querySelector('.org-subcat-wrap');
+  if (wrap.querySelector(`[data-org-sub="${CSS.escape(sub)}"]`)) {
+    toast('Sub-category already exists'); return;
+  }
+  const el = document.createElement('div');
+  el.className = 'org-subcat'; el.dataset.orgSub = sub;
+  el.innerHTML = _orgSubcatHtml(cat, sub);
+  wrap.appendChild(el);
+  _addSectionDrag(el, 'sub', cat);
+  _syncChips(el.querySelector('.org-subcat-chips'), []);
+  orgCancelSubcat(cat);
+  saveLayout();
+}
+
+function orgDeleteSub(cat, sub) {
+  const catEl = document.getElementById('org-cats').querySelector(`[data-org-cat="${CSS.escape(cat)}"]`);
+  const subEl = catEl?.querySelector(`[data-org-sub="${CSS.escape(sub)}"]`);
+  if (!subEl) return;
+  const chips = [...subEl.querySelectorAll('.cam-chip')];
+  if (chips.length && !confirm(`Move cameras in "${sub}" to direct under "${cat}"?`)) return;
+  const saves = chips.map(chip => fetch(`/api/cameras/${encodeURIComponent(chip.dataset.cam)}`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ category: cat, subcategory: '' }),
+  }));
+  Promise.all(saves).then(() => load());
+  subEl.remove();
+  saveLayout();
+}
+
+/* ── Rename ─────────────────────────────────────────────────────── */
+async function orgRenameCat(input, oldCat) {
+  const newCat = input.value.trim();
+  if (!newCat || newCat === oldCat) { input.value = oldCat; return; }
+  // Update all cameras in this category
+  const camNames = Object.entries(_cameras)
+    .filter(([, c]) => (c.config?.category || '') === oldCat)
+    .map(([n]) => n);
+  await Promise.all(camNames.map(name => fetch(`/api/cameras/${encodeURIComponent(name)}`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ category: newCat }),
+  })));
+  toast(`Renamed "${oldCat}" → "${newCat}"`);
+  load();
+}
+
+async function orgRenameSub(input, cat, oldSub) {
+  const newSub = input.value.trim();
+  if (!newSub || newSub === oldSub) { input.value = oldSub; return; }
+  const camNames = Object.entries(_cameras)
+    .filter(([, c]) => (c.config?.category || '') === cat && (c.config?.subcategory || '') === oldSub)
+    .map(([n]) => n);
+  await Promise.all(camNames.map(name => fetch(`/api/cameras/${encodeURIComponent(name)}`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ subcategory: newSub }),
+  })));
+  toast(`Renamed "${oldSub}" → "${newSub}"`);
+  load();
+}
+</script>
+</body>
+</html>

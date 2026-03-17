@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recordings — FMS Camera System</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.min.js"></script>
+  <style>
+    :root {
+      --bg0: #07090d; --bg1: #0d1117; --bg2: #111820;
+      --bg3: #16202d; --bg4: #1c2b3a; --border: #1e2d3d;
+      --text1: #e2e8f0; --text2: #8fa3b1; --text3: #4a6070;
+      --green: #10b981; --blue: #3b82f6; --red: #ef4444;
+      --amber: #f59e0b; --purple: #8b5cf6;
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg0); color: var(--text1);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px; min-height: 100vh; padding: 28px 24px;
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    header {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 28px; flex-wrap: wrap;
+    }
+    header h1 { font-size: 1.15rem; font-weight: 600; }
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+    .header-right a {
+      color: var(--text2); text-decoration: none; font-size: .85rem;
+      padding: 5px 12px; border: 1px solid var(--border);
+      border-radius: 6px; background: var(--bg3);
+    }
+    .header-right a:hover { color: var(--text1); border-color: var(--text2); }
+
+    /* ── Camera grid ─────────────────────────────────────────── */
+    .cameras-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+    }
+    .cam-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 18px;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .cam-card-header { display: flex; align-items: center; gap: 10px; }
+    .cam-card-name { font-weight: 600; font-size: .95rem; flex: 1; }
+    .cam-card-size { color: var(--text3); font-size: .75rem; }
+    .cam-card-dates { color: var(--text3); font-size: .78rem; }
+    .btn-watch {
+      display: block; width: 100%; text-align: center;
+      background: var(--blue); border: none; border-radius: 6px;
+      color: #fff; font-size: .88rem; font-weight: 600;
+      padding: 9px; cursor: pointer; transition: opacity .15s;
+    }
+    .btn-watch:hover { opacity: .85; }
+    .empty { color: var(--text3); text-align: center; padding: 60px; }
+
+    /* ── Watch modal ─────────────────────────────────────────── */
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.85); z-index: 100;
+      align-items: center; justify-content: center; padding: 20px;
+    }
+    .modal-backdrop.open { display: flex; }
+
+    .watch-modal {
+      background: var(--bg1); border: 1px solid var(--border);
+      border-radius: var(--radius); width: min(480px, 100%);
+      display: flex; flex-direction: column;
+    }
+    .modal-header {
+      display: flex; align-items: center; padding: 12px 16px;
+      border-bottom: 1px solid var(--border); gap: 10px;
+    }
+    .modal-header h2 { font-size: .95rem; font-weight: 600; flex: 1; }
+    .modal-close {
+      background: none; border: none; color: var(--text2);
+      font-size: 1.3rem; cursor: pointer; padding: 0 4px;
+    }
+    .modal-close:hover { color: var(--text1); }
+    .watch-body { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .watch-label { color: var(--text2); font-size: .78rem; }
+    .date-pills { display: flex; flex-wrap: wrap; gap: 5px; min-height: 28px; }
+    .date-pill {
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text1); border-radius: 4px; padding: 3px 10px;
+      font-size: .76rem; cursor: pointer;
+    }
+    .date-pill:hover { border-color: var(--blue); color: var(--blue); }
+    .shift-row { display: flex; gap: 8px; }
+    .shift-btn {
+      flex: 1; padding: 8px 12px; border-radius: 6px; font-size: .82rem;
+      font-weight: 600; border: 1px solid var(--border); cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+    }
+    .shift-btn:hover { opacity: .85; }
+    .shift-btn.day  { background: #1a2e1a; border-color: var(--green); color: var(--green); }
+    .shift-btn.night { background: #1a1a2e; border-color: var(--purple); color: var(--purple); }
+    .shift-sub { font-size: .72rem; opacity: .7; font-weight: 400; }
+    .dt-row { display: flex; gap: 8px; align-items: center; }
+    .dt-row input[type=datetime-local] {
+      flex: 1; background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text1); padding: 8px 10px;
+      font-size: .85rem; outline: none;
+    }
+    .dt-row input:focus { border-color: var(--blue); }
+    .watch-footer {
+      padding: 12px 16px; border-top: 1px solid var(--border);
+      display: flex; gap: 8px; justify-content: flex-end;
+    }
+    .btn-sm {
+      padding: 5px 12px; border-radius: 5px; font-size: .8rem;
+      border: 1px solid var(--border); background: var(--bg3);
+      color: var(--text1); cursor: pointer;
+    }
+    .btn-sm:hover { background: var(--bg4); }
+    .btn-sm.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .btn-sm.primary:hover { opacity: .85; }
+
+    /* ── Video modal ─────────────────────────────────────────── */
+    .video-modal {
+      background: var(--bg1); border: 1px solid var(--border);
+      border-radius: var(--radius); width: min(960px, 100%);
+      max-height: 90vh; display: flex; flex-direction: column;
+    }
+    .video-wrap { background: #000; position: relative; }
+    .video-wrap video { width: 100%; max-height: 65vh; display: block; object-fit: contain; }
+
+    /* Error overlay */
+    .video-error {
+      display: none; position: absolute; inset: 0;
+      background: rgba(0,0,0,.88); align-items: center; justify-content: center;
+      flex-direction: column; gap: 12px; text-align: center; padding: 24px;
+    }
+    .video-error.show { display: flex; }
+    .video-error-msg { color: var(--red); font-size: .9rem; }
+    .video-error-detail { color: var(--text3); font-size: .78rem; }
+
+    /* Controls bar */
+    .video-controls {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      padding: 8px 14px; border-top: 1px solid var(--border);
+      background: var(--bg2);
+    }
+    .vc-time {
+      font-size: .8rem; color: var(--text2); font-variant-numeric: tabular-nums;
+      min-width: 160px;
+    }
+    .vc-shift-badge {
+      font-size: .72rem; padding: 2px 7px; border-radius: 10px; font-weight: 600;
+    }
+    .vc-shift-badge.day   { background: #1a2e1a; color: var(--green); border: 1px solid var(--green); }
+    .vc-shift-badge.night { background: #1a1a2e; color: var(--purple); border: 1px solid var(--purple); }
+    .vc-spacer { flex: 1; }
+    .vc-label { font-size: .76rem; color: var(--text3); }
+    .speed-btns { display: flex; gap: 4px; }
+    .speed-btn {
+      padding: 3px 8px; border-radius: 4px; font-size: .76rem;
+      border: 1px solid var(--border); background: var(--bg3);
+      color: var(--text2); cursor: pointer;
+    }
+    .speed-btn:hover { background: var(--bg4); color: var(--text1); }
+    .speed-btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .nav-btns { display: flex; gap: 4px; }
+    .nav-btn {
+      padding: 4px 10px; border-radius: 5px; font-size: .76rem;
+      border: 1px solid var(--border); background: var(--bg3);
+      color: var(--text2); cursor: pointer;
+    }
+    .nav-btn:hover { background: var(--bg4); color: var(--text1); }
+
+    /* ── Toast ───────────────────────────────────────────────── */
+    .toast {
+      position: fixed; bottom: 20px; right: 20px;
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text1); padding: 9px 14px; border-radius: var(--radius);
+      font-size: .82rem; opacity: 0; transform: translateY(6px);
+      transition: opacity .2s, transform .2s; pointer-events: none; z-index: 999;
+    }
+    .toast.show { opacity: 1; transform: none; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📼 Recordings</h1>
+  <div class="header-right">
+    <a href="/">← Dashboard</a>
+  </div>
+</header>
+
+<div id="cameras-wrap"><div class="empty">Loading…</div></div>
+
+<!-- Watch modal -->
+<div class="modal-backdrop" id="watch-modal">
+  <div class="watch-modal">
+    <div class="modal-header">
+      <h2 id="watch-title">Watch Recordings</h2>
+      <button class="modal-close" onclick="closeWatch()">✕</button>
+    </div>
+    <div class="watch-body">
+      <div class="watch-label">Available dates</div>
+      <div class="date-pills" id="date-pills"></div>
+      <div class="watch-label">Quick select</div>
+      <div class="shift-row">
+        <button class="shift-btn day"   onclick="pickShift('day')">
+          ☀️ Day Shift
+          <span class="shift-sub">07:00 → 19:00</span>
+        </button>
+        <button class="shift-btn night" onclick="pickShift('night')">
+          🌙 Night Shift
+          <span class="shift-sub">19:00 → 07:00</span>
+        </button>
+      </div>
+      <div class="watch-label">Or pick a specific start time</div>
+      <div class="dt-row">
+        <input type="datetime-local" id="watch-dt">
+      </div>
+    </div>
+    <div class="watch-footer">
+      <button class="btn-sm" onclick="closeWatch()">Cancel</button>
+      <button class="btn-sm primary" id="watch-play-btn" onclick="startVod()">▶ Play</button>
+    </div>
+  </div>
+</div>
+
+<!-- Video modal -->
+<div class="modal-backdrop" id="video-modal">
+  <div class="video-modal">
+    <div class="modal-header">
+      <h2 id="video-title"></h2>
+      <button class="modal-close" onclick="closeVideo()">✕</button>
+    </div>
+    <div class="video-wrap">
+      <video id="video-player" controls></video>
+      <div class="video-error" id="video-error">
+        <div class="video-error-msg" id="video-error-msg">Playback error</div>
+        <div class="video-error-detail" id="video-error-detail"></div>
+        <button class="btn-sm" onclick="retryVod()">↺ Retry</button>
+      </div>
+    </div>
+    <div class="video-controls">
+      <span class="vc-time" id="vc-time">—</span>
+      <span class="vc-shift-badge" id="vc-shift-badge" style="display:none"></span>
+      <span class="vc-spacer"></span>
+      <div class="nav-btns">
+        <button class="nav-btn" onclick="jumpToShift(-1)" title="Previous shift">◀ Prev Shift</button>
+        <button class="nav-btn" onclick="jumpToShift(1)"  title="Next shift">Next Shift ▶</button>
+      </div>
+      <span class="vc-label">Speed:</span>
+      <div class="speed-btns" id="speed-btns">
+        <button class="speed-btn" data-speed="0.5" onclick="setSpeed(0.5)">½×</button>
+        <button class="speed-btn active" data-speed="1" onclick="setSpeed(1)">1×</button>
+        <button class="speed-btn" data-speed="2" onclick="setSpeed(2)">2×</button>
+        <button class="speed-btn" data-speed="4" onclick="setSpeed(4)">4×</button>
+        <button class="speed-btn" data-speed="8" onclick="setSpeed(8)">8×</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let _recSummary = {};
+let _cameras    = {};
+let _watchCam   = '';
+let _hlsInst    = null;
+let _vodStartDt     = null;   // wall-clock Date of first frame
+let _vodWindowStart = null;   // ISO string of current window's start
+let _timeInterval   = null;
+let _mediaErrCount  = 0;
+
+/* ── Load data ───────────────────────────────────────────────── */
+async function load() {
+  const [statusData, recData] = await Promise.all([
+    fetch('/api/status').then(r => r.json()).catch(() => ({})),
+    fetch('/api/recordings/summary').then(r => r.json()).catch(() => ({})),
+  ]);
+  _cameras    = statusData.cameras || {};
+  _recSummary = recData;
+  render();
+}
+
+function render() {
+  const wrap = document.getElementById('cameras-wrap');
+  const names = Object.keys(_cameras).filter(n => _cameras[n].config?.visible !== false);
+  const withRec = names.filter(n => _recSummary[n]);
+
+  if (!withRec.length) {
+    wrap.innerHTML = '<div class="empty">No recordings available yet.</div>';
+    return;
+  }
+
+  wrap.innerHTML = `<div class="cameras-grid">${withRec.map(cardHtml).join('')}</div>`;
+}
+
+function cardHtml(name) {
+  const rec = _recSummary[name];
+  const size = fmtSize(rec.size_mb);
+  const dateRange = rec.first_date === rec.last_date
+    ? rec.first_date
+    : `${rec.first_date} → ${rec.last_date}`;
+  return `
+    <div class="cam-card">
+      <div class="cam-card-header">
+        <div class="cam-card-name">${esc(name)}</div>
+        <div class="cam-card-size">${size}</div>
+      </div>
+      <div class="cam-card-dates">${esc(dateRange)}</div>
+      <button class="btn-watch" onclick="openWatch('${esc(name)}')">▶ Watch recordings</button>
+    </div>`;
+}
+
+/* ── Watch modal ─────────────────────────────────────────────── */
+function openWatch(name) {
+  _watchCam = name;
+  document.getElementById('watch-title').textContent = `Watch — ${name}`;
+
+  const info = _recSummary[name];
+  const pills = document.getElementById('date-pills');
+  if (info && info.dates.length) {
+    const sorted = [...info.dates].sort().reverse();
+    pills.innerHTML = sorted.map(d =>
+      `<button class="date-pill" onclick="pickDate('${esc(d)}')">${esc(d)}</button>`
+    ).join('');
+    // Default: most recent date, day shift if current time ≥ 07:00, else night
+    const now = new Date();
+    const defaultHour = now.getHours() >= 7 && now.getHours() < 19 ? 7 : 19;
+    document.getElementById('watch-dt').value = `${sorted[0]}T${String(defaultHour).padStart(2,'0')}:00`;
+  } else {
+    pills.textContent = 'No recordings.';
+    document.getElementById('watch-dt').value = '';
+  }
+
+  const btn = document.getElementById('watch-play-btn');
+  btn.disabled = false; btn.textContent = '▶ Play';
+  document.getElementById('watch-modal').classList.add('open');
+}
+
+function _selectedDate() {
+  // Returns the date portion of the current datetime-local value, or most recent date
+  const v = document.getElementById('watch-dt').value;
+  if (v) return v.substring(0, 10);
+  const info = _recSummary[_watchCam];
+  if (info && info.dates.length) return [...info.dates].sort().reverse()[0];
+  return new Date().toISOString().substring(0, 10);
+}
+
+function pickDate(d) {
+  const cur = document.getElementById('watch-dt').value;
+  const time = cur ? cur.substring(11) : '07:00';
+  document.getElementById('watch-dt').value = `${d}T${time}`;
+}
+
+function pickShift(shift) {
+  const date = _selectedDate();
+  const time = shift === 'day' ? '07:00' : '19:00';
+  document.getElementById('watch-dt').value = `${date}T${time}`;
+  // Auto-play on shift click
+  const btn = document.getElementById('watch-play-btn');
+  btn.disabled = true; btn.textContent = 'Starting…';
+  startVod();
+}
+
+function closeWatch() {
+  document.getElementById('watch-modal').classList.remove('open');
+}
+
+async function startVod(fromDt) {
+  const dtVal = fromDt || document.getElementById('watch-dt').value;
+  if (!dtVal) { toast('Select a date and time'); return; }
+
+  if (!fromDt) {
+    const btn = document.getElementById('watch-play-btn');
+    btn.disabled = true; btn.textContent = 'Starting…';
+  }
+
+  hideVideoError();
+  try {
+    const r = await fetch(`/api/recordings/${encodeURIComponent(_watchCam)}/vod`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: dtVal, hours: 12 }),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      const msg = d.error || 'Could not start playback';
+      if (!fromDt) {
+        toast(msg);
+        const btn = document.getElementById('watch-play-btn');
+        btn.disabled = false; btn.textContent = '▶ Play';
+      } else {
+        showVideoError(msg, d.detail || '');
+      }
+      return;
+    }
+    closeWatch();
+    _vodWindowStart = dtVal;
+    const actualStart = d.actual_start ? new Date(d.actual_start) : new Date(dtVal);
+    const label = actualStart.toLocaleString([], {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+    openVideo(`${_watchCam} — from ${label}`, d.url, actualStart);
+  } catch {
+    if (!fromDt) {
+      toast('Network error');
+      const btn = document.getElementById('watch-play-btn');
+      btn.disabled = false; btn.textContent = '▶ Play';
+    } else {
+      showVideoError('Network error', '');
+    }
+  }
+}
+
+/* ── Shift navigation ────────────────────────────────────────── */
+// Shifts are anchored at 07:00 (day) and 19:00 (night).
+// direction: +1 = next shift, -1 = prev shift
+function jumpToShift(direction) {
+  if (!_vodWindowStart || !_watchCam) return;
+  const base = new Date(_vodWindowStart);
+  const h = base.getHours();
+
+  // Find the start of the shift that contains this time
+  let shiftStart = new Date(base);
+  if (h >= 7 && h < 19) {
+    shiftStart.setHours(7, 0, 0, 0);   // in day shift
+  } else if (h >= 19) {
+    shiftStart.setHours(19, 0, 0, 0);  // in night shift
+  } else {
+    // h < 7: in night shift that started yesterday
+    shiftStart.setDate(shiftStart.getDate() - 1);
+    shiftStart.setHours(19, 0, 0, 0);
+  }
+
+  // Step to the target shift boundary
+  const target = new Date(shiftStart.getTime() + direction * 12 * 3600 * 1000);
+  const pad = n => String(n).padStart(2, '0');
+  const newDt = `${target.getFullYear()}-${pad(target.getMonth()+1)}-${pad(target.getDate())}T${pad(target.getHours())}:${pad(target.getMinutes())}`;
+
+  destroyHls();
+  clearTimeInterval();
+  hideVideoError();
+  document.getElementById('video-player').src = '';
+  startVod(newDt);
+}
+
+async function retryVod() {
+  hideVideoError();
+  if (_vodWindowStart) startVod(_vodWindowStart);
+}
+
+/* ── Video modal ─────────────────────────────────────────────── */
+function openVideo(title, src, wallClockStart) {
+  destroyHls();
+  clearTimeInterval();
+  _vodStartDt = wallClockStart || null;
+  _mediaErrCount = 0;
+
+  document.getElementById('video-title').textContent = title;
+  const video = document.getElementById('video-player');
+  video.src = '';
+  hideVideoError();
+  setSpeed(1, true);
+  updateShiftBadge(wallClockStart);
+
+  if (Hls.isSupported()) {
+    _hlsInst = new Hls({
+      enableWorker: true,
+      lowLatencyMode: false,
+      maxBufferLength: 60,
+      maxMaxBufferLength: 120,
+      startLevel: -1,
+    });
+    _hlsInst.loadSource(src);
+    _hlsInst.attachMedia(video);
+    _hlsInst.on(Hls.Events.MANIFEST_PARSED, () => {
+      video.play().catch(() => {});
+    });
+    _hlsInst.on(Hls.Events.ERROR, (evt, data) => {
+      if (!data.fatal) return;
+      if (data.type === Hls.ErrorTypes.MEDIA_ERROR && _mediaErrCount < 2) {
+        _mediaErrCount++;
+        _hlsInst.recoverMediaError();
+        return;
+      }
+      const detail = data.response ? `HTTP ${data.response.code}` : (data.type || '');
+      showVideoError('Playback failed — ' + (data.details || 'unknown error'), detail);
+    });
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = src;
+    video.play().catch(() => {});
+    video.addEventListener('error', () => showVideoError('Video error', ''), { once: true });
+  } else {
+    showVideoError('HLS not supported in this browser', '');
+    return;
+  }
+
+  // Wall-clock time display
+  _timeInterval = setInterval(() => {
+    if (!_vodStartDt) { document.getElementById('vc-time').textContent = '—'; return; }
+    const wall = new Date(_vodStartDt.getTime() + video.currentTime * 1000);
+    document.getElementById('vc-time').textContent = wall.toLocaleString([], {
+      month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+    updateShiftBadge(wall);
+  }, 500);
+
+  document.getElementById('video-modal').classList.add('open');
+}
+
+function updateShiftBadge(dt) {
+  const badge = document.getElementById('vc-shift-badge');
+  if (!dt) { badge.style.display = 'none'; return; }
+  const h = dt.getHours();
+  const isDay = h >= 7 && h < 19;
+  badge.textContent = isDay ? '☀️ Day' : '🌙 Night';
+  badge.className = 'vc-shift-badge ' + (isDay ? 'day' : 'night');
+  badge.style.display = '';
+}
+
+function closeVideo() {
+  destroyHls();
+  clearTimeInterval();
+  const v = document.getElementById('video-player');
+  v.pause(); v.src = '';
+  hideVideoError();
+  document.getElementById('vc-time').textContent = '—';
+  document.getElementById('vc-shift-badge').style.display = 'none';
+  document.getElementById('video-modal').classList.remove('open');
+  _vodStartDt = null;
+  _vodWindowStart = null;
+}
+
+function destroyHls() {
+  if (_hlsInst) { _hlsInst.destroy(); _hlsInst = null; }
+}
+
+function clearTimeInterval() {
+  if (_timeInterval) { clearInterval(_timeInterval); _timeInterval = null; }
+}
+
+function showVideoError(msg, detail) {
+  document.getElementById('video-error-msg').textContent = msg;
+  document.getElementById('video-error-detail').textContent = detail;
+  document.getElementById('video-error').classList.add('show');
+}
+
+function hideVideoError() {
+  document.getElementById('video-error').classList.remove('show');
+}
+
+/* ── Speed control ───────────────────────────────────────────── */
+function setSpeed(rate, silent) {
+  const video = document.getElementById('video-player');
+  video.playbackRate = rate;
+  document.querySelectorAll('.speed-btn').forEach(b => {
+    b.classList.toggle('active', parseFloat(b.dataset.speed) === rate);
+  });
+  if (!silent) toast(`${rate}× playback`);
+}
+
+/* ── Helpers ─────────────────────────────────────────────────── */
+document.getElementById('watch-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeWatch();
+});
+document.getElementById('video-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeVideo();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (document.getElementById('video-modal').classList.contains('open')) { closeVideo(); return; }
+    if (document.getElementById('watch-modal').classList.contains('open')) { closeWatch(); }
+  }
+});
+
+let _toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function fmtSize(mb) {
+  if (!mb || mb <= 0) return '0 MB';
+  if (mb >= 1024 * 1024) return (mb / 1024 / 1024).toFixed(2) + ' TB';
+  if (mb >= 1024)        return (mb / 1024).toFixed(2) + ' GB';
+  return mb.toFixed(1) + ' MB';
+}
+
+load();
+</script>
+</body>
+</html>
