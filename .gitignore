@@ -12,6 +12,23 @@ config/cameras.tmp
 recordings/
 excerpts/
 hls/
+vod/
+
+# Frigate runtime data (keep config.yml, exclude db/certs/cache)
+frigate/frigate.db
+frigate/frigate.db-shm
+frigate/frigate.db-wal
+frigate/backup.db
+frigate/backup_config.yaml
+frigate/model_cache/
+frigate/cert.pem
+frigate/key.pem
+frigate/go2rtc_homekit.yml
+
+# Dashboard db symlink copy
+config/frigate.db
+config/frigate.db-shm
+config/frigate.db-wal
 
 # Migration archives
 *.tar.gz

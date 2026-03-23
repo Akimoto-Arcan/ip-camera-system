@@ -9,16 +9,18 @@ service; this process is read-only except for config writes.
 import base64
 import json
 import logging
+import math
 import os
 import re
 import shutil
 import socket
+import sqlite3
 import subprocess
 import threading
 import time
 import unicodedata
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import bcrypt
@@ -77,8 +79,9 @@ def _check_superadmin(username: str, password: str) -> bool:
         return False
 
 RECORDINGS_PATH = Path(os.environ.get("RECORDINGS_PATH", "/recordings"))
-HLS_PATH        = Path(os.environ.get("HLS_PATH", "/hls"))
 CONFIG_PATH     = Path(os.environ.get("CONFIG_PATH", "/config/cameras.yml"))
+FRIGATE_DB_PATH = Path(os.environ.get("FRIGATE_DB_PATH", "/config/frigate.db"))
+FRIGATE_URL     = os.environ.get("FRIGATE_URL", "http://localhost:5000")
 STATUS_FILE     = RECORDINGS_PATH / ".status.json"
 EXCERPTS_PATH   = Path(os.environ.get("EXCERPTS_PATH", "/excerpts"))
 VOD_PATH        = Path(os.environ.get("VOD_PATH", "/tmp/vod"))
@@ -87,8 +90,14 @@ VOD_PATH        = Path(os.environ.get("VOD_PATH", "/tmp/vod"))
 _config_lock = threading.Lock()
 
 # ── VOD session state ──────────────────────────────────────────────────────────
-_vod_sessions: dict = {}   # session_id → {path, proc, created, cam_dir, known_segs}
+_vod_sessions: dict = {}   # session_id → {path, proc, created, camera, known_segs}
 _vod_lock = threading.Lock()
+
+# ── VOD segment conversion concurrency control ─────────────────────────────────
+# Limits simultaneous ffmpeg transcodes so the server stays responsive.
+_convert_sem = threading.Semaphore(3)
+_convert_locks: dict = {}          # str(dst) → Lock  (prevents double-conversion)
+_convert_locks_mu = threading.Lock()
 
 
 def _cleanup_old_vod_sessions() -> None:
@@ -129,7 +138,7 @@ def _vod_cleanup_loop() -> None:
             pass
 
 
-def _vod_extend_watcher(session_id: str, cam_dir: Path, out_dir: Path) -> None:
+def _vod_extend_watcher(session_id: str, camera: str, out_dir: Path) -> None:
     """Background: after initial FFmpeg finishes, watch for new recording segments
     and remux them into the HLS playlist so playback extends seamlessly."""
     # Wait for initial FFmpeg to finish
@@ -146,33 +155,63 @@ def _vod_extend_watcher(session_id: str, cam_dir: Path, out_dir: Path) -> None:
 
     playlist_path = out_dir / "index.m3u8"
 
+    # Build video args for each segment: copy H.264, transcode HEVC to H.264
+    def _video_args_for(fp: Path) -> list:
+        try:
+            pr = subprocess.run(
+                ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                 "-show_entries", "stream=codec_name",
+                 "-of", "default=noprint_wrappers=1:nokey=1", str(fp)],
+                capture_output=True, text=True, timeout=10,
+            )
+            vc = pr.stdout.strip().lower()
+        except Exception:
+            vc = ""
+        if vc == "h264":
+            return ["-c:v", "copy", "-bsf:v", "h264_mp4toannexb"]
+        return ["-c:v", "libx264", "-preset", "fast", "-crf", "23"]
+
+    # After initial FFmpeg finishes, mark playlist as VOD if no new segments exist
+    _endlist_written = False
+
+    def _write_endlist():
+        nonlocal _endlist_written
+        if _endlist_written or not playlist_path.exists():
+            return
+        try:
+            text = playlist_path.read_text()
+            if "#EXT-X-ENDLIST" not in text:
+                tmp = playlist_path.with_suffix(".tmp")
+                tmp.write_text(text.rstrip() + "\n#EXT-X-ENDLIST\n")
+                tmp.rename(playlist_path)
+                logger.info("VOD %s: marked as ended (EXT-X-ENDLIST)", session_id)
+        except OSError:
+            pass
+        _endlist_written = True
+
     while True:
         with _vod_lock:
             if session_id not in _vod_sessions:
                 return
             known = _vod_sessions[session_id].get("known_segs", set())
 
-        time.sleep(15)
-
-        if not cam_dir.is_dir():
-            continue
+        time.sleep(5)
 
         new_segs = []
-        for date_dir in sorted(cam_dir.iterdir()):
-            if not date_dir.is_dir() or date_dir.name.startswith("."):
+        for fp, _ in _frigate_segments(camera):
+            if str(fp.resolve()) in known:
                 continue
-            for fp in sorted(date_dir.glob("*.mp4")):
-                if str(fp.resolve()) in known:
+            try:
+                st = fp.stat()
+                if st.st_size == 0 or time.time() - st.st_mtime < 30:
                     continue
-                try:
-                    st = fp.stat()
-                    if st.st_size == 0 or time.time() - st.st_mtime < 30:
-                        continue
-                except OSError:
-                    continue
-                new_segs.append(fp)
+            except OSError:
+                continue
+            new_segs.append(fp)
 
         if not new_segs:
+            # No new recordings — close the playlist so HLS.js stops at the end
+            _write_endlist()
             continue
 
         seg_counter = len(sorted(out_dir.glob("seg*.ts")))
@@ -188,9 +227,11 @@ def _vod_extend_watcher(session_id: str, cam_dir: Path, out_dir: Path) -> None:
         for fp in new_segs:
             ts_name = f"seg{seg_counter:05d}.ts"
             ts_path = out_dir / ts_name
+            vargs = _video_args_for(fp)
             try:
                 result = subprocess.run(
-                    ["ffmpeg", "-y", "-i", str(fp), "-c", "copy",
+                    ["ffmpeg", "-y", "-i", str(fp),
+                     *vargs, "-c:a", "aac", "-ac", "2",
                      "-f", "mpegts", str(ts_path)],
                     capture_output=True, timeout=180,
                 )
@@ -211,6 +252,7 @@ def _vod_extend_watcher(session_id: str, cam_dir: Path, out_dir: Path) -> None:
             seg_counter += 1
             known.add(str(fp.resolve()))
             appended = True
+            _endlist_written = False  # reset so live edge stays open
             logger.info("VOD %s: extended with %s (%.1fs)", session_id, fp.name, duration)
 
         if appended:
@@ -225,7 +267,52 @@ def _vod_extend_watcher(session_id: str, cam_dir: Path, out_dir: Path) -> None:
                 pass
 
 
-def _find_segments_from(cam_dir: Path, start_dt: datetime) -> tuple:
+def _frigate_segments(camera: str) -> list:
+    """
+    Return [(Path, datetime), ...] for all non-empty Frigate recordings of
+    camera, sorted chronologically.
+
+    Frigate path: RECORDINGS_PATH/<YYYY-MM-DD>/<HH>/<camera>/<MM.SS.mp4>
+    Directory names and filenames are in UTC; datetimes returned are naive UTC.
+    """
+    segs = []
+    if not RECORDINGS_PATH.is_dir():
+        return segs
+    for date_dir in sorted(RECORDINGS_PATH.iterdir()):
+        if not date_dir.is_dir() or date_dir.name.startswith("."):
+            continue
+        try:
+            seg_date = datetime.strptime(date_dir.name, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        for hour_dir in sorted(date_dir.iterdir()):
+            if not hour_dir.is_dir():
+                continue
+            try:
+                hour = int(hour_dir.name)
+            except ValueError:
+                continue
+            cam_hour_dir = hour_dir / camera
+            if not cam_hour_dir.is_dir():
+                continue
+            for fp in sorted(cam_hour_dir.glob("*.mp4")):
+                try:
+                    if fp.stat().st_size == 0:
+                        continue
+                    parts = fp.stem.split(".")
+                    minute = int(parts[0])
+                    second = int(parts[1]) if len(parts) > 1 else 0
+                    seg_dt_utc = datetime(
+                        seg_date.year, seg_date.month, seg_date.day,
+                        hour, minute, second,
+                    )
+                    segs.append((fp, seg_dt_utc))
+                except (ValueError, OSError, IndexError):
+                    continue
+    return segs
+
+
+def _find_segments_from(camera: str, start_dt: datetime) -> tuple:
     """
     Return ([(Path, offset_seconds), ...], actual_start_dt) for all non-empty
     recording segments at or after start_dt, sorted chronologically.
@@ -235,30 +322,10 @@ def _find_segments_from(cam_dir: Path, start_dt: datetime) -> tuple:
     begins at the start of the next available segment and offset is 0.
     Returns ([], None) when no recordings exist.
     """
-    all_segs = []
-    if not cam_dir.is_dir():
-        return [], None
-    for date_dir in sorted(cam_dir.iterdir()):
-        if not date_dir.is_dir() or date_dir.name.startswith("."):
-            continue
-        try:
-            seg_date = datetime.strptime(date_dir.name, "%Y-%m-%d").date()
-        except ValueError:
-            continue
-        for fp in sorted(date_dir.glob("*.mp4")):
-            try:
-                if fp.stat().st_size == 0:
-                    continue
-                seg_dt = datetime.combine(
-                    seg_date,
-                    datetime.strptime(fp.stem, "%H-%M-%S").time(),
-                )
-                all_segs.append((fp, seg_dt))
-            except (ValueError, OSError):
-                continue
+    all_segs = _frigate_segments(camera)
 
     if not all_segs:
-        return [], None
+        return [], None, []
 
     # Find the last segment whose start time is at or before start_dt
     start_idx = 0
@@ -285,11 +352,12 @@ def _find_segments_from(cam_dir: Path, start_dt: datetime) -> tuple:
     else:
         actual_start = start_dt
 
+    seg_slice = all_segs[start_idx:]
     result = [
         (fp, first_offset if i == 0 else 0.0)
-        for i, (fp, _) in enumerate(all_segs[start_idx:])
+        for i, (fp, _) in enumerate(seg_slice)
     ]
-    return result, actual_start
+    return result, actual_start, seg_slice
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -896,7 +964,8 @@ def api_status():
             "segments_recorded": cam_status.get("segments_recorded", 0),
             "bytes_recorded": cam_status.get("bytes_recorded", 0),
             "error": cam_status.get("error"),
-            "hls_url": f"/hls/{name}/index.m3u8",
+            "hls_url": f"/go2rtc/api/stream.m3u8?src={name}",
+            "live_url": f"/go2rtc/api/stream.mp4?src={name}",
         }
 
     return jsonify(
@@ -1112,64 +1181,136 @@ def api_set_camera_visible(name):
 
 @app.route("/api/recordings/summary")
 def api_recordings_summary():
-    """Per-camera summary: available date range and total size."""
+    """Per-camera summary: available date range and total size.
+    Frigate path: RECORDINGS_PATH/<date>/<hour>/<camera>/<MM.SS.mp4>
+    """
     result = {}
     if not RECORDINGS_PATH.exists():
         return jsonify(result)
-    for cam_dir in sorted(RECORDINGS_PATH.iterdir()):
-        if not cam_dir.is_dir() or cam_dir.name.startswith("."):
+    # Collect data per camera by scanning all date/hour dirs
+    cam_dates: dict = {}   # camera -> set of date strings
+    cam_bytes: dict = {}   # camera -> total bytes
+    for date_dir in sorted(RECORDINGS_PATH.iterdir()):
+        if not date_dir.is_dir() or date_dir.name.startswith("."):
             continue
-        dates = []
-        total_bytes = 0
-        for date_dir in sorted(cam_dir.iterdir()):
-            if not date_dir.is_dir() or date_dir.name.startswith("."):
+        try:
+            datetime.strptime(date_dir.name, "%Y-%m-%d")
+        except ValueError:
+            continue
+        for hour_dir in date_dir.iterdir():
+            if not hour_dir.is_dir():
                 continue
-            segs = [f for f in date_dir.glob("*.mp4")]
-            if not segs:
-                continue
-            try:
-                total_bytes += sum(f.stat().st_size for f in segs)
-                dates.append(date_dir.name)
-            except OSError:
-                pass
-        if dates:
-            result[cam_dir.name] = {
-                "dates": sorted(dates),
-                "first_date": min(dates),
-                "last_date": max(dates),
-                "size_mb": round(total_bytes / 1024 ** 2, 1),
-            }
+            for cam_hour_dir in hour_dir.iterdir():
+                if not cam_hour_dir.is_dir():
+                    continue
+                cam = cam_hour_dir.name
+                segs = list(cam_hour_dir.glob("*.mp4"))
+                if not segs:
+                    continue
+                try:
+                    total = sum(f.stat().st_size for f in segs)
+                except OSError:
+                    total = 0
+                cam_dates.setdefault(cam, set()).add(date_dir.name)
+                cam_bytes[cam] = cam_bytes.get(cam, 0) + total
+    for cam, dates in cam_dates.items():
+        sorted_dates = sorted(dates)
+        result[cam] = {
+            "dates": sorted_dates,
+            "first_date": sorted_dates[0],
+            "last_date": sorted_dates[-1],
+            "size_mb": round(cam_bytes.get(cam, 0) / 1024 ** 2, 1),
+        }
     return jsonify(result)
 
 
 @app.route("/api/recordings/dates")
 def api_recording_dates():
+    """Per-camera list of dates with recording counts.
+    Frigate path: RECORDINGS_PATH/<date>/<hour>/<camera>/<MM.SS.mp4>
+    """
     result = {}
     if not RECORDINGS_PATH.exists():
         return jsonify(result)
-    for cam_dir in RECORDINGS_PATH.iterdir():
-        if not cam_dir.is_dir() or cam_dir.name.startswith("."):
+    cam_date_counts: dict = {}  # camera -> {date -> count}
+    for date_dir in sorted(RECORDINGS_PATH.iterdir(), reverse=True):
+        if not date_dir.is_dir() or date_dir.name.startswith("."):
             continue
-        dates = []
-        for date_dir in sorted(cam_dir.iterdir(), reverse=True):
-            if not date_dir.is_dir() or date_dir.name.startswith("."):
+        try:
+            datetime.strptime(date_dir.name, "%Y-%m-%d")
+        except ValueError:
+            continue
+        for hour_dir in date_dir.iterdir():
+            if not hour_dir.is_dir():
                 continue
-            count = sum(1 for f in date_dir.glob("*.mp4") if f.stat().st_size > 0)
-            if count:
-                dates.append({"date": date_dir.name, "segments": count})
-        if dates:
-            result[cam_dir.name] = dates
+            for cam_hour_dir in hour_dir.iterdir():
+                if not cam_hour_dir.is_dir():
+                    continue
+                cam = cam_hour_dir.name
+                count = sum(1 for f in cam_hour_dir.glob("*.mp4") if f.stat().st_size > 0)
+                if count:
+                    cam_date_counts.setdefault(cam, {})
+                    cam_date_counts[cam][date_dir.name] = (
+                        cam_date_counts[cam].get(date_dir.name, 0) + count
+                    )
+    for cam, date_counts in cam_date_counts.items():
+        result[cam] = [
+            {"date": d, "segments": c}
+            for d, c in sorted(date_counts.items(), reverse=True)
+        ]
     return jsonify(result)
 
 
 # ── VOD (on-demand playback from recordings) ──────────────────────────────────
 
+def _ensure_ts_seg(src: Path, dst: Path) -> bool:
+    """Convert one source MP4 → MPEG-TS (H.264 720p).
+    Thread-safe: per-segment lock prevents duplicate conversions;
+    semaphore caps concurrent ffmpeg processes at 3."""
+    # Fast path — already done
+    if dst.is_file() and dst.stat().st_size > 0:
+        return True
+    # Get or create a per-segment lock
+    key = str(dst)
+    with _convert_locks_mu:
+        if key not in _convert_locks:
+            _convert_locks[key] = threading.Lock()
+        seg_lock = _convert_locks[key]
+    with seg_lock:
+        # Re-check inside the lock (another thread may have just finished)
+        if dst.is_file() and dst.stat().st_size > 0:
+            return True
+        tmp = dst.with_suffix(".tmp.ts")
+        try:
+            with _convert_sem:   # at most 3 concurrent ffmpeg processes
+                result = subprocess.run(
+                    ["ffmpeg", "-y", "-i", str(src),
+                     "-vf", "scale=1280:720",
+                     "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                     "-threads", "2",
+                     "-c:a", "copy",
+                     "-f", "mpegts", str(tmp)],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=60,
+                )
+            if result.returncode == 0 and tmp.is_file():
+                tmp.rename(dst)
+                return True
+        except Exception:
+            pass
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return False
+
+
 @app.route("/api/recordings/<camera>/vod", methods=["POST"])
 def start_vod(camera):
     """
-    Start an on-demand HLS transcode session from a given datetime.
-    Body: {"from": "YYYY-MM-DDTHH:MM"}
-    Returns: {"session_id": "...", "url": "/vod/<id>/index.m3u8"}
+    Start a VOD session by concatenating source recordings into a single seekable MP4.
+    Body: {"from": "<UTC ISO>", "hours": <float>}
+    Returns: {"session_id", "url", "actual_start", "window_start", "window_end", "timeline"}
     """
     _cleanup_old_vod_sessions()
 
@@ -1179,140 +1320,114 @@ def start_vod(camera):
     data = request.get_json(silent=True) or {}
     from_str = data.get("from", "")
     try:
-        start_dt = datetime.fromisoformat(from_str)
+        normalised = re.sub(r"\.\d+Z?$", "", from_str).replace("Z", "") + "+00:00"
+        start_dt = datetime.fromisoformat(normalised).replace(tzinfo=None)
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid 'from' datetime"}), 400
 
-    cam_dir = RECORDINGS_PATH / camera
-    if not cam_dir.is_dir():
-        return jsonify({"error": "Camera not found"}), 404
+    segments, actual_start, seg_slice = _find_segments_from(camera, start_dt)
 
-    segments, actual_start = _find_segments_from(cam_dir, start_dt)
-
-    # Exclude the segment currently open by FFmpeg (no MOOV atom yet).
-    # Use status.json for the active file, plus a 30-second recency guard.
-    status = _load_status()
-    active_files: set = set()
-    for cam_data in status.get("cameras", {}).values():
-        cf = cam_data.get("current_file", "")
-        if cf:
-            active_files.add(str(Path(cf).resolve()))
+    # Exclude segments still being written by Frigate
     now_ts = time.time()
-    segments = [
-        (fp, off) for fp, off in segments
-        if str(fp.resolve()) not in active_files
-        and (now_ts - fp.stat().st_mtime) > 30
-    ]
+    segments = [(fp, off) for fp, off in segments if (now_ts - fp.stat().st_mtime) > 30]
 
     if not segments:
         return jsonify({"error": "No recordings found at or after that time"}), 404
 
-    # Limit to a bounded window so the playlist stays manageable.
-    # Each recording segment is ~600 s; default 12 h ≈ 72 segments.
     max_hours = min(float(data.get("hours", 12.0)), 48.0)
-    max_files = max(1, int(max_hours * 6.0 + 0.5))
+    max_files = max(1, int(max_hours * 360))
     segments  = segments[:max_files]
 
     session_id = str(uuid.uuid4())[:12]
     out_dir = VOD_PATH / session_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build FFmpeg concat list
-    concat_path = out_dir / "concat.txt"
-    with open(concat_path, "w") as fh:
-        for fp, _ in segments:
-            fh.write(f"file '{fp}'\n")
+    # ── Build timeline immediately (no ffmpeg needed) ─────────────────────────
+    fp_to_utc = {str(fp.resolve()): dt for fp, dt in seg_slice}
+    durations: list[float] = []
+    for i, (fp, _) in enumerate(segments):
+        if i + 1 < len(segments):
+            curr_dt = fp_to_utc.get(str(fp.resolve()))
+            next_dt = fp_to_utc.get(str(segments[i + 1][0].resolve()))
+            if curr_dt and next_dt:
+                d = (next_dt - curr_dt).total_seconds()
+                durations.append(round(max(1.0, min(60.0, d)), 3))
+            else:
+                durations.append(12.0)
+        else:
+            durations.append(12.0)
 
-    first_offset = segments[0][1]
-    known_segs = {str(fp.resolve()) for fp, _ in segments}
+    timeline = []
+    vid_off  = 0.0
+    for i, (fp, _) in enumerate(segments):
+        seg_utc = fp_to_utc.get(str(fp.resolve()))
+        if seg_utc is None:
+            continue
+        epoch_s = int(seg_utc.replace(tzinfo=timezone.utc).timestamp())
+        timeline.append([epoch_s, round(vid_off, 1)])
+        vid_off += durations[i] if i < len(durations) else 12.0
 
-    # Detect video codec so we apply the correct bitstream filter for TS muxing.
-    # H.264/AVC in MP4 uses AVCC (length-prefixed) and needs h264_mp4toannexb.
-    # H.265/HEVC in MP4 uses similar length-prefix and needs hevc_mp4toannexb.
-    # Other codecs (MJPEG, etc.) need no BSF.
-    try:
-        probe = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "v:0",
-             "-show_entries", "stream=codec_name",
-             "-of", "default=noprint_wrappers=1:nokey=1",
-             str(segments[0][0])],
-            capture_output=True, text=True, timeout=10,
-        )
-        vcodec = probe.stdout.strip().lower()
-    except Exception:
-        vcodec = ""
-    if vcodec == "h264":
-        bsf_args = ["-bsf:v", "h264_mp4toannexb"]
-    elif vcodec in ("hevc", "h265"):
-        bsf_args = ["-bsf:v", "hevc_mp4toannexb"]
-    else:
-        bsf_args = []
+    from datetime import timedelta
+    win_start = actual_start if actual_start else start_dt
+    win_end   = win_start + timedelta(seconds=max_hours * 3600)
 
-    # Stream-copy to HLS — no re-encode, so the playlist is ready almost instantly
-    # and the player sees the correct total duration.
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", str(first_offset),
-        "-f", "concat", "-safe", "0", "-i", str(concat_path),
-        "-c", "copy",
-        *bsf_args,
-        "-f", "hls",
-        "-hls_time", "4",
-        "-hls_list_size", "0",          # keep all segments → full VOD playlist
-        "-hls_flags", "independent_segments",
-        "-hls_segment_filename", str(out_dir / "seg%05d.ts"),
-        str(out_dir / "index.m3u8"),
-    ]
-
-    stderr_buf = []
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    def _drain():
-        for line in proc.stderr:
-            stderr_buf.append(line.decode("utf-8", errors="replace"))
-    threading.Thread(target=_drain, daemon=True).start()
+    # ── Register session and kick off background ffmpeg concat ────────────────
+    concat_file = out_dir / "concat.txt"
+    concat_file.write_text(
+        "\n".join(f"file '{fp}'" for fp, _ in segments) + "\n"
+    )
+    output_mp4 = out_dir / "video.mp4"
 
     with _vod_lock:
         _vod_sessions[session_id] = {
-            "path": str(out_dir),
-            "proc": proc,
-            "created": time.time(),
-            "cam_dir": str(cam_dir),
-            "known_segs": known_segs,
+            "path":     str(out_dir),
+            "proc":     None,
+            "created":  time.time(),
+            "camera":   camera,
+            "building": True,
+            "error":    None,
         }
 
-    # With stream copy, FFmpeg processes quickly — wait up to 8 s for first segment
-    playlist = out_dir / "index.m3u8"
-    deadline = time.time() + 8
-    while time.time() < deadline:
-        if playlist.is_file() and playlist.stat().st_size > 0:
-            break
-        time.sleep(0.2)
-    else:
-        proc.terminate()
+    def _build():
         try:
-            proc.wait(timeout=5)
-        except Exception:
-            pass
-        err = "".join(stderr_buf[-20:])
-        shutil.rmtree(out_dir, ignore_errors=True)
-        with _vod_lock:
-            _vod_sessions.pop(session_id, None)
-        logger.error("VOD failed for %s from %s: %s", camera, from_str, err[-400:])
-        return jsonify({"error": "Playback failed to start", "detail": err[-300:]}), 500
+            result = subprocess.run(
+                ["ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                 "-i", str(concat_file),
+                 "-c", "copy",
+                 str(output_mp4)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=600,
+            )
+            ok = result.returncode == 0 and output_mp4.is_file()
+            with _vod_lock:
+                if session_id in _vod_sessions:
+                    _vod_sessions[session_id]["building"] = False
+                    if not ok:
+                        _vod_sessions[session_id]["error"] = "ffmpeg failed"
+            if ok:
+                logger.info("VOD %s ready: %s UTC, %d segs, %.1f h, %.0f MB",
+                            session_id, start_dt.isoformat(), len(segments),
+                            max_hours, output_mp4.stat().st_size / 1e6)
+            else:
+                logger.error("VOD %s: ffmpeg concat failed", session_id)
+        except Exception as exc:
+            logger.error("VOD %s build error: %s", session_id, exc)
+            with _vod_lock:
+                if session_id in _vod_sessions:
+                    _vod_sessions[session_id]["building"] = False
+                    _vod_sessions[session_id]["error"] = str(exc)
 
-    # Background watcher extends the playlist as new segments arrive
-    threading.Thread(
-        target=_vod_extend_watcher,
-        args=(session_id, cam_dir, out_dir),
-        daemon=True,
-    ).start()
+    threading.Thread(target=_build, daemon=True).start()
 
-    logger.info("VOD session %s started for %s from %s (actual: %s)",
-                session_id, camera, from_str,
-                actual_start.isoformat() if actual_start else "?")
-    resp = {"session_id": session_id, "url": f"/vod/{session_id}/index.m3u8"}
-    if actual_start and actual_start != start_dt:
-        resp["actual_start"] = actual_start.isoformat()
+    resp = {
+        "session_id":   session_id,
+        "building":     True,
+        "url":          f"/vod/{session_id}/video.mp4",
+        "actual_start": win_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "window_start": win_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "window_end":   win_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timeline":     timeline,
+    }
     return jsonify(resp)
 
 
@@ -1343,21 +1458,43 @@ def serve_vod_file(session_id, filename):
     except ValueError:
         abort(403)
 
-    # Wait up to 10 s for segment to be written by FFmpeg
-    deadline = time.time() + 10
-    while time.time() < deadline:
-        if target.is_file() and target.stat().st_size > 0:
-            break
-        time.sleep(0.25)
-
-    if not target.is_file():
-        abort(404)
+    # For .ts: convert on-demand if the pre-converter hasn't reached it yet.
+    if filename.endswith(".ts"):
+        if not (target.is_file() and target.stat().st_size > 0):
+            with _vod_lock:
+                seg_map = (sess or {}).get("seg_map", {})
+            src_path = seg_map.get(filename)
+            if src_path:
+                _ensure_ts_seg(Path(src_path), target)
+        if not target.is_file():
+            abort(404)
+        return send_file(str(target), mimetype="video/mp2t")
 
     if filename.endswith(".m3u8"):
+        if not target.is_file():
+            abort(404)
         return send_file(str(target), mimetype="application/vnd.apple.mpegurl")
-    elif filename.endswith(".ts"):
-        return send_file(str(target), mimetype="video/mp2t")
+
+    if filename.endswith(".mp4"):
+        if not target.is_file():
+            abort(404)
+        return send_file(str(target), mimetype="video/mp4", conditional=True)
+
     abort(400)
+
+
+@app.route("/api/recordings/<camera>/vod/<session_id>/status")
+def vod_status(camera, session_id):
+    """Poll build progress. Returns {building, error, url}."""
+    with _vod_lock:
+        sess = _vod_sessions.get(session_id)
+    if not sess:
+        return jsonify({"error": "Session not found"}), 404
+    return jsonify({
+        "building": sess.get("building", False),
+        "error":    sess.get("error"),
+        "url":      f"/vod/{session_id}/video.mp4",
+    })
 
 
 # ── Excerpts API ───────────────────────────────────────────────────────────────
@@ -1472,22 +1609,11 @@ def api_create_excerpt_from_range():
     if to_dt <= from_dt:
         return jsonify({"error": "'to' must be after 'from'"}), 400
 
-    # Find which file the recorder is currently writing (exclude it — no MOOV yet).
-    # Use status.json current_file + 120 s mtime fallback for stale status data.
-    status = _load_status()
-    active_files: set = set()
-    for cam_data in status.get("cameras", {}).values():
-        cf = cam_data.get("current_file", "")
-        if cf:
-            active_files.add(str(Path(cf).resolve()))
-
-    cam_dir  = RECORDINGS_PATH / camera
-    segments, _ = _find_segments_from(cam_dir, from_dt)
+    segments, _, _seg_slice = _find_segments_from(camera, from_dt)
     now_ts = time.time()
     segments = [
         (fp, off) for fp, off in segments
-        if str(fp.resolve()) not in active_files
-        and (now_ts - fp.stat().st_mtime) > 120
+        if (now_ts - fp.stat().st_mtime) > 30
     ]
     if not segments:
         return jsonify({"error": "No completed recording segments found for that time. "
@@ -1586,20 +1712,9 @@ def api_delete_camera_recordings(camera):
     """Delete all recordings for a camera directory (including orphaned ones)."""
     if not session.get("is_superadmin"):
         return jsonify({"error": "Unauthorized"}), 403
-    cam_dir = (RECORDINGS_PATH / camera).resolve()
-    try:
-        cam_dir.relative_to(RECORDINGS_PATH.resolve())
-    except ValueError:
-        return jsonify({"error": "Invalid camera name"}), 400
-    if not cam_dir.exists():
-        return jsonify({"error": "No recordings found"}), 404
-    try:
-        shutil.rmtree(cam_dir)
-        logger.info("Deleted recordings for %s", camera)
-        return jsonify({"success": True})
-    except Exception as exc:
-        logger.error("Failed to delete recordings for %s: %s", camera, exc)
-        return jsonify({"error": str(exc)}), 500
+    # Frigate manages its own retention (continuous.days in config).
+    # Manual per-camera deletion is not supported in Frigate mode.
+    return jsonify({"error": "Manual deletion not supported — Frigate handles retention automatically"}), 400
 
 
 @app.route("/api/recordings/orphans")
@@ -1610,12 +1725,72 @@ def api_orphan_recordings():
     cfg = _load_config()
     configured = {c["name"] for c in cfg.get("cameras", [])}
     orphans = []
+    # With Frigate, find camera names that appear in recordings but not in config
     if RECORDINGS_PATH.exists():
-        for d in RECORDINGS_PATH.iterdir():
-            if d.is_dir() and not d.name.startswith(".") and d.name not in configured:
-                size_mb = sum(f.stat().st_size for f in d.rglob("*.mp4") if f.is_file()) / (1024 * 1024)
-                orphans.append({"name": d.name, "size_mb": round(size_mb, 1)})
+        seen_cameras: set = set()
+        for date_dir in RECORDINGS_PATH.iterdir():
+            if not date_dir.is_dir() or date_dir.name.startswith("."):
+                continue
+            for hour_dir in date_dir.iterdir():
+                if not hour_dir.is_dir():
+                    continue
+                for cam_dir in hour_dir.iterdir():
+                    if cam_dir.is_dir():
+                        seen_cameras.add(cam_dir.name)
+        for cam in seen_cameras:
+            if cam not in configured:
+                segs = list(RECORDINGS_PATH.rglob(f"*/{cam}/*.mp4"))
+                size_mb = sum(f.stat().st_size for f in segs if f.is_file()) / (1024 * 1024)
+                orphans.append({"name": cam, "size_mb": round(size_mb, 1)})
     return jsonify(orphans)
+
+
+@app.route("/api/recordings/<path:camera>/motion")
+def api_motion(camera: str):
+    """
+    Return motion intensities for a camera between two UTC epoch timestamps.
+
+    Query params:
+      from  – start epoch seconds (float)
+      to    – end   epoch seconds (float)
+
+    Response: { "motion": [[start_epoch_s, end_epoch_s, motion_pixels], ...] }
+    Each entry covers one recording segment where motion > 0.
+    """
+    try:
+        from_ts = float(request.args["from"])
+        to_ts   = float(request.args["to"])
+    except (KeyError, ValueError):
+        return jsonify({"error": "from and to query params required (epoch seconds)"}), 400
+
+    if not FRIGATE_DB_PATH.exists():
+        return jsonify({"motion": []})
+
+    try:
+        con = sqlite3.connect(f"file:{FRIGATE_DB_PATH}?mode=ro", uri=True,
+                              check_same_thread=False, timeout=5)
+        cur = con.execute(
+            """
+            SELECT start_time, end_time, motion
+            FROM   recordings
+            WHERE  camera     = ?
+              AND  end_time   > ?
+              AND  start_time < ?
+              AND  motion     > 0
+            ORDER  BY start_time
+            """,
+            (camera, from_ts, to_ts),
+        )
+        rows = [
+            [round(r[0], 3), round(r[1], 3), int(r[2])]
+            for r in cur.fetchall()
+        ]
+        con.close()
+    except Exception as exc:
+        logger.warning("motion query failed: %s", exc)
+        return jsonify({"motion": []})
+
+    return jsonify({"motion": rows})
 
 
 # ── Entrypoint ─────────────────────────────────────────────────────────────────

@@ -127,8 +127,12 @@
       border-radius: var(--radius); width: min(960px, 100%);
       max-height: 90vh; display: flex; flex-direction: column;
     }
-    .video-wrap { background: #000; position: relative; }
+    .video-wrap { background: #000; position: relative; overflow: hidden; }
     .video-wrap video { width: 100%; max-height: 65vh; display: block; object-fit: contain; }
+    /* Zoom context menu */
+    .zoom-menu-box { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 0; min-width: 140px; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+    .zoom-item { padding: 7px 14px; cursor: pointer; font-size: .85rem; color: var(--text1); }
+    .zoom-item:hover { background: var(--bg4); }
 
     /* Error overlay */
     .video-error {
@@ -172,6 +176,59 @@
       color: var(--text2); cursor: pointer;
     }
     .nav-btn:hover { background: var(--bg4); color: var(--text1); }
+
+    /* ── Timeline scrubber ───────────────────────────────────── */
+    .tl-outer {
+      background: var(--bg2); border-top: 1px solid var(--border);
+      padding: 6px 14px 10px; display: none;
+    }
+    .tl-label-row {
+      position: relative; height: 15px; margin-bottom: 3px; pointer-events: none;
+    }
+    .tl-label-row span {
+      position: absolute; transform: translateX(-50%);
+      font-size: .64rem; color: var(--text3); white-space: nowrap;
+    }
+    .tl-canvas-wrap { position: relative; cursor: crosshair; }
+    #tl-canvas { display: block; width: 100%; height: 40px; border-radius: 4px; }
+    .tl-tip {
+      position: fixed; background: rgba(0,0,0,.9); color: var(--text1);
+      font-size: .72rem; padding: 3px 8px; border-radius: 4px;
+      pointer-events: none; z-index: 9999; white-space: nowrap; display: none;
+    }
+
+    /* ── Save Clip modal ─────────────────────────────────────── */
+    .save-modal {
+      background: var(--bg1); border: 1px solid var(--border);
+      border-radius: var(--radius); width: min(420px, 100%);
+      display: flex; flex-direction: column;
+    }
+    .save-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .save-field { display: flex; flex-direction: column; gap: 5px; }
+    .save-field label { font-size: .78rem; color: var(--text2); }
+    .save-field input[type=text] {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text1); padding: 8px 10px;
+      font-size: .85rem; outline: none; width: 100%;
+    }
+    .save-field input:focus { border-color: var(--blue); }
+    .dur-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+    .dur-btn {
+      padding: 5px 12px; border-radius: 5px; font-size: .8rem;
+      border: 1px solid var(--border); background: var(--bg3);
+      color: var(--text2); cursor: pointer;
+    }
+    .dur-btn:hover { background: var(--bg4); color: var(--text1); }
+    .dur-btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .save-range {
+      font-size: .78rem; color: var(--text3); font-variant-numeric: tabular-nums;
+      padding: 6px 10px; background: var(--bg3); border-radius: 5px;
+      border: 1px solid var(--border); min-height: 32px;
+    }
+    .save-footer {
+      padding: 12px 16px; border-top: 1px solid var(--border);
+      display: flex; gap: 8px; justify-content: flex-end;
+    }
 
     /* ── Toast ───────────────────────────────────────────────── */
     .toast {
@@ -236,7 +293,7 @@
       <button class="modal-close" onclick="closeVideo()">✕</button>
     </div>
     <div class="video-wrap">
-      <video id="video-player" controls></video>
+      <video id="video-player" onclick="vcTogglePlay()" style="cursor:pointer"></video>
       <div class="video-error" id="video-error">
         <div class="video-error-msg" id="video-error-msg">Playback error</div>
         <div class="video-error-detail" id="video-error-detail"></div>
@@ -244,9 +301,11 @@
       </div>
     </div>
     <div class="video-controls">
+      <button class="nav-btn" id="vc-play-btn" onclick="vcTogglePlay()" style="min-width:64px">▶ Play</button>
       <span class="vc-time" id="vc-time">—</span>
       <span class="vc-shift-badge" id="vc-shift-badge" style="display:none"></span>
       <span class="vc-spacer"></span>
+      <button class="nav-btn" onclick="openSaveClip()" title="Save a clip starting from the current position" style="color:var(--amber);border-color:var(--amber)">💾 Save Clip</button>
       <div class="nav-btns">
         <button class="nav-btn" onclick="jumpToShift(-1)" title="Previous shift">◀ Prev Shift</button>
         <button class="nav-btn" onclick="jumpToShift(1)"  title="Next shift">Next Shift ▶</button>
@@ -260,10 +319,59 @@
         <button class="speed-btn" data-speed="8" onclick="setSpeed(8)">8×</button>
       </div>
     </div>
+    <!-- Timeline scrubber -->
+    <div class="tl-outer" id="tl-outer">
+      <div class="tl-label-row" id="tl-labels"></div>
+      <div class="tl-canvas-wrap" id="tl-canvas-wrap">
+        <canvas id="tl-canvas" height="40" style="pointer-events:none"></canvas>
+      </div>
+    </div>
   </div>
 </div>
 
+<!-- Save Clip modal -->
+<div class="modal-backdrop" id="save-modal">
+  <div class="save-modal">
+    <div class="modal-header">
+      <h2>💾 Save Clip</h2>
+      <button class="modal-close" onclick="closeSaveClip()">✕</button>
+    </div>
+    <div class="save-body">
+      <div class="save-field">
+        <label>Clip name</label>
+        <input type="text" id="save-name" placeholder="e.g. incident_2026-03-19" maxlength="80">
+      </div>
+      <div class="save-field">
+        <label>Duration</label>
+        <div class="dur-btns" id="dur-btns">
+          <button class="dur-btn" data-min="1"  onclick="setSaveDur(1)">1 min</button>
+          <button class="dur-btn active" data-min="5"  onclick="setSaveDur(5)">5 min</button>
+          <button class="dur-btn" data-min="10" onclick="setSaveDur(10)">10 min</button>
+          <button class="dur-btn" data-min="30" onclick="setSaveDur(30)">30 min</button>
+        </div>
+      </div>
+      <div class="save-field">
+        <label>Clip range (current position → current + duration)</label>
+        <div class="save-range" id="save-range">—</div>
+      </div>
+    </div>
+    <div class="save-footer">
+      <button class="btn-sm" onclick="closeSaveClip()">Cancel</button>
+      <button class="btn-sm primary" id="save-submit-btn" onclick="submitSaveClip()">💾 Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="tl-tip" id="tl-tip"></div>
 <div class="toast" id="toast"></div>
+<div id="zoom-menu" style="display:none; position:fixed; z-index:5000;">
+  <div class="zoom-menu-box">
+    <div class="zoom-item" onclick="zoomTo(2)">🔍 Zoom 2×</div>
+    <div class="zoom-item" onclick="zoomTo(3)">🔍 Zoom 3×</div>
+    <div class="zoom-item" onclick="zoomTo(4)">🔍 Zoom 4×</div>
+    <div class="zoom-item" onclick="zoomTo(1)">↺ Reset Zoom</div>
+  </div>
+</div>
 
 <script>
 let _recSummary = {};
@@ -375,45 +483,80 @@ async function startVod(fromDt) {
   const dtVal = fromDt || document.getElementById('watch-dt').value;
   if (!dtVal) { toast('Select a date and time'); return; }
 
-  if (!fromDt) {
-    const btn = document.getElementById('watch-play-btn');
-    btn.disabled = true; btn.textContent = 'Starting…';
-  }
+  const btn = document.getElementById('watch-play-btn');
+  if (!fromDt) { btn.disabled = true; btn.textContent = 'Starting…'; }
 
   hideVideoError();
+
+  let d;
   try {
+    const utcFrom = new Date(dtVal).toISOString();
     const r = await fetch(`/api/recordings/${encodeURIComponent(_watchCam)}/vod`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: dtVal, hours: 12 }),
+      body: JSON.stringify({ from: utcFrom, hours: 12 }),
     });
-    const d = await r.json();
+    d = await r.json();
     if (!r.ok) {
       const msg = d.error || 'Could not start playback';
-      if (!fromDt) {
-        toast(msg);
-        const btn = document.getElementById('watch-play-btn');
-        btn.disabled = false; btn.textContent = '▶ Play';
-      } else {
-        showVideoError(msg, d.detail || '');
-      }
+      if (!fromDt) { toast(msg); btn.disabled = false; btn.textContent = '▶ Play'; }
+      else showVideoError(msg, d.detail || '');
       return;
     }
-    closeWatch();
-    _vodWindowStart = dtVal;
-    const actualStart = d.actual_start ? new Date(d.actual_start) : new Date(dtVal);
-    const label = actualStart.toLocaleString([], {
-      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-    });
-    openVideo(`${_watchCam} — from ${label}`, d.url, actualStart);
   } catch {
-    if (!fromDt) {
-      toast('Network error');
-      const btn = document.getElementById('watch-play-btn');
-      btn.disabled = false; btn.textContent = '▶ Play';
-    } else {
-      showVideoError('Network error', '');
-    }
+    if (!fromDt) { toast('Network error'); btn.disabled = false; btn.textContent = '▶ Play'; }
+    else showVideoError('Network error', '');
+    return;
+  }
+
+  // API returns immediately — open modal and show timeline right away
+  closeWatch();
+  _vodWindowStart = dtVal;
+  const actualStart = d.actual_start ? new Date(d.actual_start) : new Date(dtVal);
+  const label = actualStart.toLocaleString([], {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+
+  // Show modal with building indicator; video loads once MP4 is ready
+  document.getElementById('video-title').textContent = `${_watchCam} — from ${label}`;
+  _vodStartDt = actualStart;
+  _mediaErrCount = 0;
+  hideVideoError();
+  updateShiftBadge(actualStart);
+  document.getElementById('video-modal').classList.add('open');
+
+  if (d.timeline && d.window_start && d.window_end) {
+    _tlInit(d.window_start, d.window_end, d.timeline);
+    const fromEpoch = new Date(d.window_start).getTime() / 1000;
+    const toEpoch   = new Date(d.window_end).getTime()   / 1000;
+    _tlFetchMotion(_watchCam, fromEpoch, toEpoch);
+  } else {
+    _tlReset();
+  }
+
+  if (d.building) {
+    // Poll until the MP4 is ready
+    showVideoError('Loading shift…', 'This will take roughly 2 minutes to load shift');
+    const sid = d.session_id;
+    const cam = _watchCam;
+    const poll = setInterval(async () => {
+      try {
+        const sr = await fetch(`/api/recordings/${encodeURIComponent(cam)}/vod/${sid}/status`);
+        const sd = await sr.json();
+        if (sd.error) {
+          clearInterval(poll);
+          showVideoError('Build failed', sd.error);
+          return;
+        }
+        if (!sd.building) {
+          clearInterval(poll);
+          hideVideoError();
+          openVideo(`${cam} — from ${label}`, sd.url, actualStart);
+        }
+      } catch { /* network blip, keep polling */ }
+    }, 3000);
+  } else {
+    openVideo(`${_watchCam} — from ${label}`, d.url, actualStart);
   }
 }
 
@@ -468,39 +611,32 @@ function openVideo(title, src, wallClockStart) {
   setSpeed(1, true);
   updateShiftBadge(wallClockStart);
 
-  if (Hls.isSupported()) {
+  if (src.endsWith('.mp4')) {
+    // Native MP4 — browser handles HEVC + instant range-based seeking
+    video.src = src;
+    video.play().catch(() => {});
+    video.addEventListener('error', () => showVideoError('Video error', ''), { once: true });
+  } else if (Hls.isSupported()) {
     _hlsInst = new Hls({
-      enableWorker: true,
-      lowLatencyMode: false,
-      maxBufferLength: 60,
-      maxMaxBufferLength: 120,
-      startLevel: -1,
+      enableWorker: true, lowLatencyMode: false,
+      maxBufferLength: 30, maxMaxBufferLength: 60,
     });
     _hlsInst.loadSource(src);
     _hlsInst.attachMedia(video);
-    _hlsInst.on(Hls.Events.MANIFEST_PARSED, () => {
-      video.play().catch(() => {});
-    });
+    _hlsInst.on(Hls.Events.MANIFEST_PARSED, () => { video.play().catch(() => {}); });
     _hlsInst.on(Hls.Events.ERROR, (evt, data) => {
       if (!data.fatal) return;
       if (data.type === Hls.ErrorTypes.MEDIA_ERROR && _mediaErrCount < 2) {
-        _mediaErrCount++;
-        _hlsInst.recoverMediaError();
-        return;
+        _mediaErrCount++; _hlsInst.recoverMediaError(); return;
       }
       const detail = data.response ? `HTTP ${data.response.code}` : (data.type || '');
       showVideoError('Playback failed — ' + (data.details || 'unknown error'), detail);
     });
-  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-    video.src = src;
-    video.play().catch(() => {});
-    video.addEventListener('error', () => showVideoError('Video error', ''), { once: true });
   } else {
-    showVideoError('HLS not supported in this browser', '');
+    showVideoError('Playback not supported in this browser', '');
     return;
   }
 
-  // Wall-clock time display
   _timeInterval = setInterval(() => {
     if (!_vodStartDt) { document.getElementById('vc-time').textContent = '—'; return; }
     const wall = new Date(_vodStartDt.getTime() + video.currentTime * 1000);
@@ -509,6 +645,8 @@ function openVideo(title, src, wallClockStart) {
       hour: '2-digit', minute: '2-digit', second: '2-digit'
     });
     updateShiftBadge(wall);
+    _vcUpdatePlayBtn();
+    if (_tlSegs.length) _tlDraw();
   }, 500);
 
   document.getElementById('video-modal').classList.add('open');
@@ -532,9 +670,12 @@ function closeVideo() {
   hideVideoError();
   document.getElementById('vc-time').textContent = '—';
   document.getElementById('vc-shift-badge').style.display = 'none';
+  document.getElementById('vc-play-btn').textContent = '▶ Play';
   document.getElementById('video-modal').classList.remove('open');
   _vodStartDt = null;
   _vodWindowStart = null;
+  _tlReset();
+  _zoomReset();
 }
 
 function destroyHls() {
@@ -555,6 +696,21 @@ function hideVideoError() {
   document.getElementById('video-error').classList.remove('show');
 }
 
+/* ── Play / pause ────────────────────────────────────────────── */
+function vcTogglePlay() {
+  const video = document.getElementById('video-player');
+  if (video.paused) video.play().catch(() => {});
+  else              video.pause();
+  _vcUpdatePlayBtn();
+}
+
+function _vcUpdatePlayBtn() {
+  const video = document.getElementById('video-player');
+  const btn   = document.getElementById('vc-play-btn');
+  if (!btn) return;
+  btn.textContent = video.paused ? '▶ Play' : '⏸ Pause';
+}
+
 /* ── Speed control ───────────────────────────────────────────── */
 function setSpeed(rate, silent) {
   const video = document.getElementById('video-player');
@@ -572,8 +728,12 @@ document.getElementById('watch-modal').addEventListener('click', e => {
 document.getElementById('video-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeVideo();
 });
+document.getElementById('save-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeSaveClip();
+});
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
+    if (document.getElementById('save-modal').classList.contains('open')) { closeSaveClip(); return; }
     if (document.getElementById('video-modal').classList.contains('open')) { closeVideo(); return; }
     if (document.getElementById('watch-modal').classList.contains('open')) { closeWatch(); }
   }
@@ -598,6 +758,390 @@ function fmtSize(mb) {
   if (mb >= 1024)        return (mb / 1024).toFixed(2) + ' GB';
   return mb.toFixed(1) + ' MB';
 }
+
+/* ── Timeline scrubber ───────────────────────────────────────── */
+let _tlWinStart = 0, _tlWinEnd = 0;   // epoch ms
+let _tlSegs     = [];                  // [[wall_epoch_ms, video_offset_s], ...]
+let _tlMotion   = [];                  // [[start_ms, end_ms, pixels], ...]
+let _tlSeekBusy = false;               // locked during VOD restart to block double-clicks
+let _tlDragging = false;
+let _tlDragMs   = null;               // wall-clock ms of drag thumb; null = not dragging
+
+function _tlInit(winStartIso, winEndIso, segs) {
+  _tlWinStart  = new Date(winStartIso).getTime();
+  _tlWinEnd    = new Date(winEndIso).getTime();
+  _tlSegs      = segs.map(([t, v]) => [t * 1000, v]);
+  _tlSeekBusy  = false;
+  _tlDragMs    = null;
+  _tlDragging  = false;
+  _tlBuildLabels();
+  document.getElementById('tl-outer').style.display = 'block';
+  // Wait for layout so canvas.offsetWidth is non-zero before drawing
+  requestAnimationFrame(_tlDraw);
+}
+
+function _tlReset() {
+  _tlWinStart = 0; _tlWinEnd = 0; _tlSegs = []; _tlMotion = [];
+  _tlDragging = false; _tlDragMs = null; _tlSeekBusy = false;
+  document.getElementById('tl-outer').style.display = 'none';
+  document.getElementById('tl-tip').style.display = 'none';
+}
+
+async function _tlFetchMotion(camera, fromEpoch, toEpoch) {
+  try {
+    const r = await fetch(
+      `/api/recordings/${encodeURIComponent(camera)}/motion?from=${fromEpoch}&to=${toEpoch}`
+    );
+    if (!r.ok) return;
+    const d = await r.json();
+    // Convert epoch seconds → ms, store max pixel value for scaling
+    _tlMotion = (d.motion || []).map(([s, e, px]) => [s * 1000, e * 1000, px]);
+    _tlDraw();
+  } catch { /* non-fatal */ }
+}
+
+function _tlBuildLabels() {
+  const el = document.getElementById('tl-labels');
+  el.innerHTML = '';
+  const dur_h = (_tlWinEnd - _tlWinStart) / 3_600_000;
+  const step_h = dur_h <= 2 ? 0.5 : dur_h <= 6 ? 1 : dur_h <= 24 ? 2 : 4;
+  const step_ms = step_h * 3_600_000;
+  let t = Math.ceil(_tlWinStart / step_ms) * step_ms;
+  while (t <= _tlWinEnd) {
+    const pct = (t - _tlWinStart) / (_tlWinEnd - _tlWinStart) * 100;
+    const span = document.createElement('span');
+    span.style.left = pct + '%';
+    span.textContent = new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    el.appendChild(span);
+    t += step_ms;
+  }
+}
+
+function _tlDraw() {
+  const canvas = document.getElementById('tl-canvas');
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.offsetWidth * dpr;
+  const H = canvas.offsetHeight * dpr;
+  if (!W || !H) return;
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const dur = _tlWinEnd - _tlWinStart;
+
+  // Background — no recording
+  ctx.fillStyle = '#0d1117';
+  ctx.fillRect(0, 0, W, H);
+
+  // Motion intensity bars — logarithmic scale so even low motion is visible
+  if (_tlMotion.length) {
+    const maxPx  = Math.max(..._tlMotion.map(m => m[2]));
+    const logMax = Math.log1p(maxPx);
+    const barH   = H * 0.55;  // use 55% of canvas height for motion
+    for (const [s_ms, e_ms, px] of _tlMotion) {
+      const x1    = (s_ms - _tlWinStart) / dur * W;
+      const x2    = (e_ms - _tlWinStart) / dur * W;
+      const ratio = logMax > 0 ? Math.log1p(px) / logMax : 0;
+      const bh    = Math.max(3, barH * ratio);
+      const alpha = 0.45 + 0.55 * ratio;
+      ctx.fillStyle = `rgba(245,158,11,${alpha.toFixed(2)})`;
+      ctx.fillRect(Math.floor(x1), H - bh, Math.max(2, Math.ceil(x2 - x1)), bh);
+    }
+  }
+
+  // Recording blocks (segments where the gap to the next is ≤ 60 s)
+  for (let i = 0; i < _tlSegs.length; i++) {
+    const t_ms = _tlSegs[i][0];
+    const next_ms = i + 1 < _tlSegs.length ? _tlSegs[i + 1][0] : t_ms + 12_000;
+    const end_ms  = (next_ms - t_ms) <= 60_000 ? next_ms : t_ms + 12_000;
+    const x1 = (t_ms   - _tlWinStart) / dur * W;
+    const x2 = (end_ms - _tlWinStart) / dur * W;
+    ctx.fillStyle = '#1d4ed8';
+    ctx.fillRect(Math.floor(x1), 3, Math.max(2, Math.ceil(x2 - x1)), H - 6);
+  }
+
+  // Dim the portion that hasn't been transcoded yet
+  const v = document.getElementById('video-player');
+  if (_vodStartDt && isFinite(v.duration)) {
+    const transcoded_wall_ms = _vodStartDt.getTime() + v.duration * 1000;
+    const xEnd = (transcoded_wall_ms - _tlWinStart) / dur * W;
+    if (xEnd < W) {
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(Math.max(0, xEnd), 0, W - xEnd, H);
+    }
+  }
+
+  // Playhead — use drag position while scrubbing, otherwise video position
+  const headMs = _tlDragMs !== null
+    ? _tlDragMs
+    : (_vodStartDt ? _vodStartDt.getTime() + v.currentTime * 1000 : null);
+  if (headMs !== null) {
+    const px = (headMs - _tlWinStart) / dur * W;
+    if (px >= 0 && px <= W) {
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(Math.round(px) - dpr, 0, 2 * dpr, H);
+    }
+  }
+}
+
+// Drag-scrub + hover on the wrapper div (canvas has pointer-events:none)
+const _tlWrap = document.getElementById('tl-canvas-wrap');
+
+function _tlPosFromEvent(e) {
+  const rect  = _tlWrap.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  const target_ms = _tlWinStart + ratio * (_tlWinEnd - _tlWinStart);
+  let best = _tlSegs[0];
+  for (let i = 0; i < _tlSegs.length; i++) {
+    if (_tlSegs[i][0] <= target_ms) best = _tlSegs[i];
+    else break;
+  }
+  const intra  = Math.max(0, (target_ms - best[0]) / 1000);
+  const seekTo = best[1] + intra;
+  const video  = document.getElementById('video-player');
+  return { target_ms, seekTo, within: !isFinite(video.duration) || seekTo <= video.duration };
+}
+
+function _tlShowTip(e, t_ms) {
+  const tip = document.getElementById('tl-tip');
+  tip.textContent = new Date(t_ms).toLocaleString([], {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+  tip.style.display = 'block';
+  tip.style.left = (e.clientX + 14) + 'px';
+  tip.style.top  = (e.clientY - 32) + 'px';
+}
+
+_tlWrap.addEventListener('mousedown', e => {
+  if (e.button !== 0 || !_tlSegs.length || _tlSeekBusy) return;
+  e.preventDefault();
+  _tlDragging = true;
+  const { target_ms, seekTo } = _tlPosFromEvent(e);
+  _tlDragMs = target_ms;
+  const video = document.getElementById('video-player');
+  video.currentTime = seekTo;
+  _tlShowTip(e, target_ms);
+  _tlDraw();
+});
+
+// Drag continues even outside the timeline strip
+document.addEventListener('mousemove', e => {
+  if (_tlDragging && _tlSegs.length) {
+    const { target_ms, seekTo } = _tlPosFromEvent(e);
+    _tlDragMs = target_ms;
+    const video = document.getElementById('video-player');
+    video.currentTime = seekTo;
+    _tlShowTip(e, target_ms);
+    _tlDraw();
+    return;
+  }
+  // Hover tooltip when not dragging
+  if (!_tlSegs.length) return;
+  const rect = _tlWrap.getBoundingClientRect();
+  if (e.clientX < rect.left || e.clientX > rect.right ||
+      e.clientY < rect.top  || e.clientY > rect.bottom) return;
+  const ratio = (e.clientX - rect.left) / rect.width;
+  _tlShowTip(e, _tlWinStart + ratio * (_tlWinEnd - _tlWinStart));
+});
+
+document.addEventListener('mouseup', e => {
+  if (!_tlDragging) return;
+  _tlDragging = false;
+  _tlDragMs = null;
+  if (!_tlSegs.length) { _tlDraw(); return; }
+  const { seekTo } = _tlPosFromEvent(e);
+  document.getElementById('video-player').currentTime = seekTo;
+  _tlDraw();
+});
+
+_tlWrap.addEventListener('mouseleave', () => {
+  if (!_tlDragging) document.getElementById('tl-tip').style.display = 'none';
+});
+
+/* ── Save Clip ───────────────────────────────────────────────── */
+let _saveDurMin = 5;  // default 5 minutes
+
+function openSaveClip() {
+  if (!_vodStartDt || !_watchCam) { toast('No video playing'); return; }
+
+  // Pre-fill name: camera + current wall-clock time
+  const video = document.getElementById('video-player');
+  const wall  = new Date(_vodStartDt.getTime() + video.currentTime * 1000);
+  const pad   = n => String(n).padStart(2, '0');
+  const name  = `${_watchCam}_${wall.getFullYear()}-${pad(wall.getMonth()+1)}-${pad(wall.getDate())}_${pad(wall.getHours())}${pad(wall.getMinutes())}`;
+  document.getElementById('save-name').value = name;
+
+  _saveDurMin = 5;
+  document.querySelectorAll('.dur-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.min) === _saveDurMin);
+  });
+
+  _updateSaveRange();
+  const btn = document.getElementById('save-submit-btn');
+  btn.disabled = false; btn.textContent = '💾 Save';
+  document.getElementById('save-modal').classList.add('open');
+}
+
+function closeSaveClip() {
+  document.getElementById('save-modal').classList.remove('open');
+}
+
+function setSaveDur(min) {
+  _saveDurMin = min;
+  document.querySelectorAll('.dur-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.min) === min);
+  });
+  _updateSaveRange();
+}
+
+function _updateSaveRange() {
+  if (!_vodStartDt) return;
+  const video = document.getElementById('video-player');
+  const fromMs = _vodStartDt.getTime() + video.currentTime * 1000;
+  const toMs   = fromMs + _saveDurMin * 60_000;
+  const fmt = ms => new Date(ms).toLocaleString([], {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+  document.getElementById('save-range').textContent = `${fmt(fromMs)} → ${fmt(toMs)}`;
+}
+
+async function submitSaveClip() {
+  if (!_vodStartDt || !_watchCam) return;
+
+  const name = document.getElementById('save-name').value.trim();
+  if (!name) { toast('Enter a clip name'); document.getElementById('save-name').focus(); return; }
+
+  const video  = document.getElementById('video-player');
+  const fromMs = _vodStartDt.getTime() + video.currentTime * 1000;
+  const toMs   = fromMs + _saveDurMin * 60_000;
+
+  const btn = document.getElementById('save-submit-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  try {
+    const r = await fetch('/api/excerpts/from-range', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        camera: _watchCam,
+        name:   name,
+        from:   new Date(fromMs).toISOString(),
+        to:     new Date(toMs).toISOString(),
+      }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) {
+      closeSaveClip();
+      toast(`Saved: ${name}`);
+    } else {
+      toast(d.error || 'Save failed');
+      btn.disabled = false; btn.textContent = '💾 Save';
+    }
+  } catch {
+    toast('Network error');
+    btn.disabled = false; btn.textContent = '💾 Save';
+  }
+}
+
+/* ── Zoom: scroll wheel + right-click menu + drag to pan ─────── */
+let _zoomScale = 1.0, _zoomPanX = 0, _zoomPanY = 0;
+let _zoomDragging = false, _zoomDragStartX = 0, _zoomDragStartY = 0;
+let _zoomPanStartX = 0, _zoomPanStartY = 0;
+let _zoomClickX = 0, _zoomClickY = 0;
+
+function _zoomApply() {
+  const v = document.getElementById('video-player');
+  v.style.transformOrigin = '0 0';
+  if (_zoomScale <= 1) {
+    v.style.transform = '';
+    v.style.cursor = '';
+  } else {
+    v.style.transform = `translate(${_zoomPanX}px,${_zoomPanY}px) scale(${_zoomScale})`;
+    v.style.cursor = _zoomDragging ? 'grabbing' : 'grab';
+  }
+}
+
+function _zoomClamp() {
+  const v = document.getElementById('video-player');
+  const w = v.offsetWidth || 1, h = v.offsetHeight || 1;
+  _zoomPanX = Math.min(0, Math.max(_zoomPanX, w * (1 - _zoomScale)));
+  _zoomPanY = Math.min(0, Math.max(_zoomPanY, h * (1 - _zoomScale)));
+}
+
+function _zoomToPoint(newScale, cx, cy) {
+  const cxC = (cx - _zoomPanX) / _zoomScale;
+  const cyC = (cy - _zoomPanY) / _zoomScale;
+  _zoomScale = newScale;
+  _zoomPanX = cx - cxC * _zoomScale;
+  _zoomPanY = cy - cyC * _zoomScale;
+  _zoomClamp();
+  _zoomApply();
+}
+
+function zoomTo(level) {
+  document.getElementById('zoom-menu').style.display = 'none';
+  if (level <= 1) { _zoomScale = 1; _zoomPanX = 0; _zoomPanY = 0; _zoomApply(); }
+  else            { _zoomToPoint(level, _zoomClickX, _zoomClickY); }
+}
+
+function _zoomReset() { _zoomScale = 1; _zoomPanX = 0; _zoomPanY = 0; _zoomApply(); }
+
+const _zvp = document.getElementById('video-player');
+
+// Right-click → show zoom menu
+_zvp.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const rect = _zvp.getBoundingClientRect();
+  _zoomClickX = e.clientX - rect.left;
+  _zoomClickY = e.clientY - rect.top;
+  const menu = document.getElementById('zoom-menu');
+  menu.style.display = '';
+  menu.style.left = e.clientX + 'px';
+  menu.style.top  = e.clientY + 'px';
+  requestAnimationFrame(() => {
+    const mw = menu.offsetWidth, mh = menu.offsetHeight;
+    if (e.clientX + mw > window.innerWidth)  menu.style.left = (e.clientX - mw) + 'px';
+    if (e.clientY + mh > window.innerHeight) menu.style.top  = (e.clientY - mh) + 'px';
+  });
+});
+
+document.addEventListener('click', e => {
+  const menu = document.getElementById('zoom-menu');
+  if (menu && !menu.contains(e.target)) menu.style.display = 'none';
+});
+
+// Scroll wheel → smooth zoom
+_zvp.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = _zvp.getBoundingClientRect();
+  const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  const newScale = Math.max(1, Math.min(8, _zoomScale * factor));
+  if (newScale <= 1) { _zoomScale = 1; _zoomPanX = 0; _zoomPanY = 0; _zoomApply(); }
+  else               { _zoomToPoint(newScale, cx, cy); }
+}, { passive: false });
+
+// Drag to pan when zoomed
+_zvp.addEventListener('mousedown', e => {
+  if (e.button !== 0 || _zoomScale <= 1) return;
+  _zoomDragging = true;
+  _zoomDragStartX = e.clientX; _zoomDragStartY = e.clientY;
+  _zoomPanStartX = _zoomPanX;  _zoomPanStartY = _zoomPanY;
+  e.preventDefault();
+  _zoomApply();
+});
+document.addEventListener('mousemove', e => {
+  if (!_zoomDragging) return;
+  _zoomPanX = _zoomPanStartX + e.clientX - _zoomDragStartX;
+  _zoomPanY = _zoomPanStartY + e.clientY - _zoomDragStartY;
+  _zoomClamp();
+  _zoomApply();
+});
+document.addEventListener('mouseup', () => {
+  if (!_zoomDragging) return;
+  _zoomDragging = false;
+  _zoomApply();
+});
+
+window.addEventListener('resize', () => { if (_tlSegs.length) _tlDraw(); });
 
 load();
 </script>

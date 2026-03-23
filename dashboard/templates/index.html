@@ -1161,7 +1161,8 @@ function openLiveView(camName, evt) {
   if (evt) evt.stopPropagation();
   _vodCamera = camName;
   _vodStartDatetime = null;
-  openVideoModal(camName + ' — Live', `/hls/${encodeURIComponent(camName)}/index.m3u8`, 'live', true);
+  const liveUrl = _latestCameras[camName]?.live_url || `/go2rtc/api/stream.mp4?src=${encodeURIComponent(camName)}`;
+  openVideoModal(camName + ' — Live', liveUrl, 'live', false);
 }
 
 function openVideoModal(title, src, meta, isHls = false) {
@@ -1300,24 +1301,10 @@ function _buildGrid(names) {
     container.appendChild(cell);
 
     const video = cell.querySelector('video');
-    const src   = `/hls/${encodeURIComponent(name)}/index.m3u8`;
-    if (Hls.isSupported()) {
-      const hls = new Hls({ enableWorker: true,
-        liveSyncDurationCount: 2, liveMaxLatencyDurationCount: 4, startPosition: -1 });
-      _gridHlsInstances[idx] = hls;
-      hls.loadSource(src);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal) cell.querySelector('.grid-cell-error').style.display = '';
-      });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = src;
-      video.play().catch(() => {});
-    } else {
-      cell.querySelector('.grid-cell-error').style.display = '';
-      cell.querySelector('.grid-cell-error').textContent = 'HLS not supported';
-    }
+    const src   = _latestCameras[name]?.live_url || `/go2rtc/api/stream.mp4?src=${encodeURIComponent(name)}`;
+    video.src = src;
+    video.play().catch(() => {});
+    video.onerror = () => { cell.querySelector('.grid-cell-error').style.display = ''; };
   });
 }
 
@@ -1633,6 +1620,17 @@ document.addEventListener('mouseup', () => {
   _vcDragging = false;
   _vcApplyZoom();
 });
+
+// Scroll wheel → smooth zoom
+_vp.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = _vp.getBoundingClientRect();
+  const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  const newScale = Math.max(1, Math.min(8, _vcZoomScale * factor));
+  if (newScale <= 1) { _vcZoomScale = 1; _vcPanX = 0; _vcPanY = 0; _vcApplyZoom(); }
+  else               { _vcZoomToPoint(newScale, cx, cy); }
+}, { passive: false });
 
 /* ── Live recording (clips to excerpt) ──────────────────────────────────────── */
 function vcToggleRecord() {

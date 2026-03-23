@@ -5,9 +5,9 @@ cameras:
   dvr_url: https://192.168.1.251
   channel: 1
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 1
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Shipping
@@ -16,9 +16,9 @@ cameras:
   dvr_url: https://192.168.1.251
   channel: 2
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 1
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Parking_Lot
@@ -27,9 +27,9 @@ cameras:
   dvr_url: https://192.168.1.251
   channel: 3
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 1
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Breakroom
@@ -38,9 +38,9 @@ cameras:
   dvr_url: https://192.168.1.251
   channel: 4
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 1
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: UD1_Creel
@@ -49,9 +49,9 @@ cameras:
   dvr_url: https://192.168.1.251
   channel: 5
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 1
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: UD3_Creel_CP1
@@ -60,9 +60,9 @@ cameras:
   dvr_url: https://192.168.1.251
   channel: 6
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 1
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Meyer_1
@@ -71,9 +71,9 @@ cameras:
   dvr_url: https://192.168.1.251
   channel: 7
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 1
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Meyer_3
@@ -82,9 +82,9 @@ cameras:
   dvr_url: https://192.168.1.251
   channel: 8
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 1
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Office
@@ -93,9 +93,9 @@ cameras:
   dvr_url: https://192.168.1.251
   channel: 9
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 1
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: UD2_Creel_Meyer_5
@@ -104,9 +104,9 @@ cameras:
   dvr_url: https://192.168.1.251
   channel: 10
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 1
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: CP3
@@ -115,9 +115,9 @@ cameras:
   dvr_url: https://192.168.1.251
   channel: 11
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 1
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Shipping_Dock_Back
@@ -126,9 +126,9 @@ cameras:
   dvr_url: https://192.168.1.251
   channel: 12
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 1
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: UD3_Winder
@@ -137,9 +137,9 @@ cameras:
   dvr_url: https://192.168.1.251
   channel: 13
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 1
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: UD2_Winder
@@ -148,9 +148,9 @@ cameras:
   dvr_url: https://192.168.1.251
   channel: 14
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 1
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Inspection_1
@@ -159,9 +159,9 @@ cameras:
   dvr_url: https://192.168.1.251
   channel: 15
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 1
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Inspection_Overview
@@ -170,9 +170,9 @@ cameras:
   dvr_url: https://192.168.1.251
   channel: 16
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 1
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Ballistics_Office
@@ -181,9 +181,9 @@ cameras:
   dvr_url: https://192.168.1.252
   channel: 1
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 2
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Stablab
@@ -192,9 +192,9 @@ cameras:
   dvr_url: https://192.168.1.252
   channel: 2
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 2
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Ballistics_Prep
@@ -203,9 +203,9 @@ cameras:
   dvr_url: https://192.168.1.252
   channel: 3
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 2
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Shipping_Dock_Front
@@ -214,9 +214,9 @@ cameras:
   dvr_url: https://192.168.1.252
   channel: 4
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 2
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Between_UD1_UD2
@@ -225,9 +225,9 @@ cameras:
   dvr_url: https://192.168.1.252
   channel: 5
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 2
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: UD2_Platform
@@ -236,9 +236,9 @@ cameras:
   dvr_url: https://192.168.1.252
   channel: 6
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 2
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Inspection_3
@@ -247,9 +247,9 @@ cameras:
   dvr_url: https://192.168.1.252
   channel: 7
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 2
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: DVR2_Ch08
@@ -259,17 +259,17 @@ cameras:
   channel: 8
   enabled: false
   visible: false
-  category: Legacy Cameras
-  subcategory: Camera System 2
+  category: ''
+  subcategory: ''
 - name: CP2
   type: tigersecu
   ip: 192.168.1.252
   dvr_url: https://192.168.1.252
   channel: 9
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 2
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Shipping_Bay_Doors
@@ -278,9 +278,9 @@ cameras:
   dvr_url: https://192.168.1.252
   channel: 10
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 2
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Meyer_3_Winder
@@ -289,9 +289,9 @@ cameras:
   dvr_url: https://192.168.1.252
   channel: 11
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 2
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Meyer_2
@@ -300,9 +300,9 @@ cameras:
   dvr_url: https://192.168.1.252
   channel: 12
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 2
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Selection
@@ -311,9 +311,9 @@ cameras:
   dvr_url: https://192.168.1.252
   channel: 13
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 2
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Lab_Hallway
@@ -322,9 +322,9 @@ cameras:
   dvr_url: https://192.168.1.252
   channel: 14
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 2
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Supervisor_Desk
@@ -333,9 +333,9 @@ cameras:
   dvr_url: https://192.168.1.252
   channel: 15
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 2
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: Parking_Lot_2
@@ -344,9 +344,9 @@ cameras:
   dvr_url: https://192.168.1.252
   channel: 16
   enabled: false
-  visible: true
-  category: Legacy Cameras
-  subcategory: Camera System 2
+  visible: false
+  category: ''
+  subcategory: ''
   onvif_port: 80
   segment_duration: 600
 - name: DVR3
@@ -355,13 +355,13 @@ cameras:
   dvr_url: https://192.168.1.253
   enabled: false
   visible: false
-  category: Legacy Cameras
-  subcategory: DVR3
+  category: ''
+  subcategory: ''
 - name: Maintenance_Shop
   ip: 192.168.100.45
   rtsp_url: rtsp://admin:123456@192.168.100.45:554/stream0
   enabled: true
-  visible: true
+  visible: false
   category: Building 1
   subcategory: Maintenance
 - name: DBP2_Winders
@@ -373,15 +373,10 @@ cameras:
   subcategory: DBP2
 layout:
   category_order:
-  - Legacy Cameras
   - Building 1
   - Building 2
   - Building 3
   subcategory_order:
-    Legacy Cameras:
-    - Camera System 1
-    - Camera System 2
-    - DVR3
     Building 1:
     - Maintenance
     Building 3:
