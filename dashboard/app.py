@@ -47,7 +47,12 @@ logger = logging.getLogger("dashboard")
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "ipcam-admin-secret-change-me")
 
-# ── MySQL auth config ───────────────────────────────────────────────────────────
+# ── Auth backend selection ──────────────────────────────────────────────────────
+# Set AUTH_BACKEND=file to use config/users.yml instead of MySQL
+AUTH_BACKEND = os.environ.get("AUTH_BACKEND", "file").lower()
+USERS_FILE   = Path(os.environ.get("USERS_PATH", "/config/users.yml"))
+
+# ── MySQL auth config (only used when AUTH_BACKEND=mysql) ──────────────────────
 MYSQL_HOST = os.environ.get("MYSQL_HOST", "192.168.1.158")
 MYSQL_PORT = int(os.environ.get("MYSQL_PORT", 3306))
 MYSQL_USER = os.environ.get("MYSQL_USER", "appuser")
@@ -58,7 +63,75 @@ MYSQL_DB   = os.environ.get("MYSQL_DB",   "Users")
 SSO_SECRET = os.environ.get("SSO_SECRET", "fms-cam-sso-2026-K9x$mP!qW3rT")
 
 
-def _check_superadmin(username: str, password: str) -> bool:
+# ── File-based auth helpers ────────────────────────────────────────────────────
+
+def _load_users_file() -> list:
+    """Load users from the YAML file."""
+    if not USERS_FILE.exists():
+        return []
+    try:
+        with open(USERS_FILE) as f:
+            data = yaml.safe_load(f) or {}
+        return data.get("users", [])
+    except Exception as exc:
+        logger.error("Failed to load users file: %s", exc)
+        return []
+
+
+def _save_users_file(users: list) -> None:
+    """Write users back to the YAML file."""
+    tmp = USERS_FILE.with_suffix(".tmp")
+    with open(tmp, "w") as f:
+        yaml.dump({"users": users}, f, default_flow_style=False, sort_keys=False)
+    tmp.replace(USERS_FILE)
+
+
+def _file_authenticate(username: str, password: str) -> Optional[dict]:
+    """Authenticate against users.yml."""
+    for u in _load_users_file():
+        if u.get("username") != username:
+            continue
+        if not u.get("approved", False):
+            return None
+        stored = u.get("password", "")
+        hashed_bytes = stored.replace("$2y$", "$2b$").encode()
+        try:
+            if not bcrypt.checkpw(password.encode(), hashed_bytes):
+                return None
+        except Exception:
+            return None
+        role = u.get("role", "Operator")
+        is_sa = role == "SuperAdmin"
+        return {
+            "username": username,
+            "role": role,
+            "is_superadmin": is_sa,
+            "reset": bool(u.get("reset", False)),
+        }
+    return None
+
+
+def _file_check_superadmin(username: str, password: str) -> bool:
+    """Check SuperAdmin status from users.yml."""
+    result = _file_authenticate(username, password)
+    return result is not None and result["is_superadmin"]
+
+
+def _file_change_password(username: str, new_hash: str) -> bool:
+    """Update a user's password in users.yml."""
+    users = _load_users_file()
+    for u in users:
+        if u["username"] == username:
+            u["password"] = new_hash
+            u["reset"] = False
+            _save_users_file(users)
+            return True
+    return False
+
+
+# ── MySQL auth helpers ─────────────────────────────────────────────────────────
+
+def _mysql_check_superadmin(username: str, password: str) -> bool:
     """Return True if username/password is valid and user is SuperAdmin."""
     try:
         conn = pymysql.connect(
@@ -85,8 +158,9 @@ def _check_superadmin(username: str, password: str) -> bool:
         logger.error("MySQL auth error: %s", exc)
         return False
 
-def _authenticate_user(username: str, password: str) -> Optional[dict]:
-    """Authenticate user and return {username, role, is_superadmin} or None."""
+
+def _mysql_authenticate(username: str, password: str) -> Optional[dict]:
+    """Authenticate user against MySQL."""
     try:
         conn = pymysql.connect(
             host=MYSQL_HOST, port=MYSQL_PORT,
@@ -111,6 +185,20 @@ def _authenticate_user(username: str, password: str) -> Optional[dict]:
     except Exception as exc:
         logger.error("MySQL auth error: %s", exc)
         return None
+
+
+# ── Unified auth dispatch ──────────────────────────────────────────────────────
+
+def _check_superadmin(username: str, password: str) -> bool:
+    if AUTH_BACKEND == "mysql":
+        return _mysql_check_superadmin(username, password)
+    return _file_check_superadmin(username, password)
+
+
+def _authenticate_user(username: str, password: str) -> Optional[dict]:
+    if AUTH_BACKEND == "mysql":
+        return _mysql_authenticate(username, password)
+    return _file_authenticate(username, password)
 
 
 def _user_can_see_camera(cam: dict, role: str) -> bool:
@@ -792,20 +880,27 @@ def change_password():
             error = "Passwords do not match."
         else:
             try:
-                hashed = bcrypt.hashpw(new_pw.encode(), bcrypt.gensalt()).decode().replace("$2b$", "$2y$")
-                conn = pymysql.connect(
-                    host=MYSQL_HOST, port=MYSQL_PORT,
-                    user=MYSQL_USER, password=MYSQL_PASS,
-                    db=MYSQL_DB, connect_timeout=5,
-                )
-                with conn:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            "UPDATE users SET password=%s, reset=0 WHERE username=%s",
-                            (hashed, session["username"])
-                        )
-                    conn.commit()
-                return redirect(url_for("index"))
+                new_hash = bcrypt.hashpw(new_pw.encode(), bcrypt.gensalt()).decode()
+                if AUTH_BACKEND == "file":
+                    if _file_change_password(session["username"], new_hash):
+                        return redirect(url_for("index"))
+                    else:
+                        error = "User not found."
+                else:
+                    hashed_mysql = new_hash.replace("$2b$", "$2y$")
+                    conn = pymysql.connect(
+                        host=MYSQL_HOST, port=MYSQL_PORT,
+                        user=MYSQL_USER, password=MYSQL_PASS,
+                        db=MYSQL_DB, connect_timeout=5,
+                    )
+                    with conn:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "UPDATE users SET password=%s, reset=0 WHERE username=%s",
+                                (hashed_mysql, session["username"])
+                            )
+                        conn.commit()
+                    return redirect(url_for("index"))
             except Exception as exc:
                 logger.error("Password change error: %s", exc)
                 error = "Failed to update password. Please try again."

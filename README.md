@@ -92,7 +92,7 @@ A complete IP camera management platform that turns any network of RTSP cameras 
 ```bash
 git clone https://github.com/Akimoto-Arcan/ip-camera-system.git
 cd ip-camera-system
-cp .env.example .env   # or edit .env directly
+cp .env.example .env
 ```
 
 Edit `.env` with your settings:
@@ -129,9 +129,23 @@ sudo chmod 777 /mnt/ipcam-storage/{recordings,vod,chunks,excerpts,hls}
 docker compose up -d
 ```
 
-### 4. Access the Dashboard
+### 4. Set Up Users
 
-Open `http://<server-ip>` in your browser. Log in with credentials from your MySQL user database.
+```bash
+# Copy the example users file
+cp config/users.yml.example config/users.yml
+
+# Or add users via CLI after containers start
+docker exec ipcam-dashboard python3 /app/manage_users.py add admin --role SuperAdmin --password yourpassword
+```
+
+The example file includes a default `admin` account (password: `changeme`). **Change this immediately.**
+
+> To use MySQL instead of the file, set `AUTH_BACKEND=mysql` in `.env` — see [Authentication](#authentication).
+
+### 5. Access the Dashboard
+
+Open `http://<server-ip>` in your browser and log in.
 
 ---
 
@@ -190,15 +204,71 @@ A background process pre-builds hourly chunk files from raw segments, making VOD
 
 ---
 
-## Authentication & SSO
+## Authentication
 
-### Local Authentication
+The system supports two authentication backends — choose whichever fits your setup.
 
-Users authenticate against a MySQL database (`Users` table) with bcrypt-hashed passwords. Role-based access controls which cameras each user can see.
+### Option A: File-Based Users (default)
 
-### SSO Integration
+No database required. Users are stored in `config/users.yml` with bcrypt-hashed passwords.
 
-The system supports HMAC-SHA256 signed token authentication for seamless SSO with external applications:
+**Quick setup:**
+
+```bash
+# Copy the example file
+cp config/users.yml.example config/users.yml
+
+# Add users via CLI
+docker exec ipcam-dashboard python3 /app/manage_users.py add admin --role SuperAdmin --password yourpassword
+docker exec ipcam-dashboard python3 /app/manage_users.py add operator1 --role Operator --password op123456
+```
+
+**Manage users:**
+
+```bash
+docker exec ipcam-dashboard python3 /app/manage_users.py list
+docker exec ipcam-dashboard python3 /app/manage_users.py reset-password admin --password newpass
+docker exec ipcam-dashboard python3 /app/manage_users.py set-role operator1 --role Supervisor
+docker exec ipcam-dashboard python3 /app/manage_users.py delete operator1
+```
+
+**Roles:** `SuperAdmin`, `Admin`, `Supervisor`, `Operator`, `Maintenance`, `Shipping`, `Inspection`, `Lab`
+
+Set in `.env`:
+```env
+AUTH_BACKEND=file
+```
+
+### Option B: MySQL Database
+
+For integration with existing user management systems. Users authenticate against a MySQL `users` table with bcrypt-hashed passwords.
+
+Set in `.env`:
+```env
+AUTH_BACKEND=mysql
+MYSQL_HOST=192.168.1.158
+MYSQL_PORT=3306
+MYSQL_USER=appuser
+MYSQL_PASS=yourpassword
+MYSQL_DB=Users
+```
+
+Expected table schema:
+```sql
+CREATE TABLE users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(100) NOT NULL UNIQUE,
+  password VARCHAR(255) NOT NULL,     -- bcrypt hash ($2y$ or $2b$ prefix)
+  role VARCHAR(50) DEFAULT 'Operator',
+  groups VARCHAR(255) DEFAULT '',     -- comma-separated (e.g. "SuperAdmin,Supervisor")
+  approved TINYINT(1) DEFAULT 0,
+  reset TINYINT(1) DEFAULT 0
+);
+```
+
+### SSO Integration (optional)
+
+The system supports HMAC-SHA256 signed token authentication for seamless single sign-on with external applications:
 
 **Incoming SSO** (external app → camera dashboard):
 ```
@@ -250,6 +320,7 @@ Access at `/admin` (SuperAdmin only):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `AUTH_BACKEND` | `file` | Auth mode: `file` (users.yml) or `mysql` |
 | `RECORDINGS_DIR` | `/mnt/ipcam-storage/recordings` | Recording storage path |
 | `VOD_DIR` | `/mnt/ipcam-storage/vod` | VOD session temp files |
 | `EXCERPTS_DIR` | `/mnt/ipcam-storage/excerpts` | Permanent clip storage |
@@ -258,8 +329,8 @@ Access at `/admin` (SuperAdmin only):
 | `CAMERA_SUBNET` | `192.168.100.0/24` | ONVIF discovery subnets |
 | `ONVIF_USERNAME` | `admin` | Default ONVIF username |
 | `ONVIF_PASSWORD` | — | Default ONVIF password |
-| `MYSQL_HOST` | `192.168.1.158` | Auth database host |
-| `MYSQL_DB` | `Users` | Auth database name |
+| `MYSQL_HOST` | `192.168.1.158` | Auth database host (mysql backend only) |
+| `MYSQL_DB` | `Users` | Auth database name (mysql backend only) |
 | `SSO_SECRET` | — | HMAC shared secret for SSO tokens |
 | `SECRET_KEY` | — | Flask session signing key |
 | `MAX_STORAGE_GB` | `3500` | Max recording storage before rotation |

@@ -74,6 +74,8 @@ services:
       - VOD_PATH=/vod
       - CHUNKS_PATH=/chunks
       - CONFIG_PATH=/config/cameras.yml
+      - USERS_PATH=/config/users.yml
+      - AUTH_BACKEND=${AUTH_BACKEND:-file}
       - FRIGATE_URL=http://host.docker.internal:5000
       - FRIGATE_CONFIG_PATH=/frigate-config/config.yml
       - DOCS_PATH=/docs

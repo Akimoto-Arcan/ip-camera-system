@@ -1,0 +1,28 @@
+# ──────────────────────────────────────────────
+#  File-based user database for the camera dashboard
+#
+#  Copy this file to users.yml and add your users.
+#  Passwords are bcrypt hashes — generate one with:
+#    docker exec ipcam-dashboard python3 -c "import bcrypt; print(bcrypt.hashpw(b'YOUR_PASSWORD', bcrypt.gensalt()).decode())"
+#
+#  Or use the built-in user management CLI:
+#    docker exec ipcam-dashboard python3 /app/manage_users.py add admin --role SuperAdmin --password changeme
+#    docker exec ipcam-dashboard python3 /app/manage_users.py list
+#    docker exec ipcam-dashboard python3 /app/manage_users.py reset-password admin --password newpass
+# ──────────────────────────────────────────────
+
+users:
+  - username: admin
+    password: "$2b$12$UxgB07ZZAA4B2VXNdX.T5OVOOdbUggjd/yuL3/kt4/X5tgOOKdKSK"   # default: changeme
+    role: SuperAdmin
+    approved: true
+
+  # - username: supervisor1
+  #   password: "$2b$12$..."
+  #   role: Supervisor
+  #   approved: true
+
+  # - username: operator1
+  #   password: "$2b$12$..."
+  #   role: Operator
+  #   approved: true
