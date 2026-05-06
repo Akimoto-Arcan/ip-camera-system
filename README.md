@@ -232,7 +232,55 @@ docker exec ipcam-dashboard python3 /app/manage_users.py set-role operator1 --ro
 docker exec ipcam-dashboard python3 /app/manage_users.py delete operator1
 ```
 
-**Roles:** `SuperAdmin`, `Admin`, `Supervisor`, `Operator`, `Maintenance`, `Shipping`, `Inspection`, `Lab`
+**Manage roles:**
+
+Roles are defined in `config/users.yml` with three permission levels:
+
+| Level | Access |
+|-------|--------|
+| `admin` | Full access: admin panel, all cameras, system settings |
+| `manager` | All cameras visible, limited admin |
+| `viewer` | Only cameras explicitly assigned to their role |
+
+```bash
+# List roles
+docker exec ipcam-dashboard python3 /app/manage_users.py roles
+
+# Add custom roles for your organization
+docker exec ipcam-dashboard python3 /app/manage_users.py add-role "Security Director" --level admin
+docker exec ipcam-dashboard python3 /app/manage_users.py add-role "Security Guard" --level viewer
+docker exec ipcam-dashboard python3 /app/manage_users.py add-role "Plant Manager" --level manager
+
+# Rename a role (automatically updates all users with that role)
+docker exec ipcam-dashboard python3 /app/manage_users.py rename-role Operator --name "Floor Worker"
+
+# Remove a role (fails if users are still assigned to it)
+docker exec ipcam-dashboard python3 /app/manage_users.py remove-role Operator
+```
+
+Or edit `config/users.yml` directly:
+
+```yaml
+roles:
+  - name: IT Admin
+    level: admin
+  - name: Plant Manager
+    level: manager
+  - name: Security Guard
+    level: viewer
+  - name: Maintenance
+    level: viewer
+```
+
+Then assign cameras to roles in `config/cameras.yml`:
+
+```yaml
+cameras:
+  - name: Front_Gate
+    allowed_roles:
+      - Security Guard
+      - Plant Manager
+```
 
 Set in `.env`:
 ```env

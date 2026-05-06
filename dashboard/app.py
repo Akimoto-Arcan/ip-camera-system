@@ -63,6 +63,61 @@ MYSQL_DB   = os.environ.get("MYSQL_DB",   "Users")
 SSO_SECRET = os.environ.get("SSO_SECRET", "fms-cam-sso-2026-K9x$mP!qW3rT")
 
 
+# ── Roles configuration ────────────────────────────────────────────────────────
+# Loaded from users.yml (file backend) or defaults. Maps role names to levels.
+
+_DEFAULT_ROLES = [
+    {"name": "Admin",      "level": "admin"},
+    {"name": "Supervisor", "level": "manager"},
+    {"name": "Operator",   "level": "viewer"},
+]
+
+_roles_map: dict = {}  # role_name -> level (admin/manager/viewer)
+
+
+def _load_roles() -> None:
+    """Load roles from users.yml into the global map."""
+    global _roles_map
+    roles = _DEFAULT_ROLES
+    if USERS_FILE.exists():
+        try:
+            with open(USERS_FILE) as f:
+                data = yaml.safe_load(f) or {}
+            if data.get("roles"):
+                roles = data["roles"]
+        except Exception:
+            pass
+    _roles_map = {r["name"]: r.get("level", "viewer") for r in roles}
+    # Backward compatibility: map legacy names if not already present
+    for legacy in ("SuperAdmin",):
+        if legacy not in _roles_map:
+            _roles_map[legacy] = "admin"
+
+
+def _role_level(role: str) -> str:
+    """Return the permission level for a role name."""
+    if not _roles_map:
+        _load_roles()
+    return _roles_map.get(role, "viewer")
+
+
+def _is_admin_role(role: str) -> bool:
+    """True if this role has admin-level permissions."""
+    return _role_level(role) == "admin"
+
+
+def _is_manager_or_above(role: str) -> bool:
+    """True if this role has manager or admin permissions."""
+    return _role_level(role) in ("admin", "manager")
+
+
+def _get_roles_list() -> list:
+    """Return the list of defined roles for UI dropdowns."""
+    if not _roles_map:
+        _load_roles()
+    return [{"name": name, "level": level} for name, level in _roles_map.items()]
+
+
 # ── File-based auth helpers ────────────────────────────────────────────────────
 
 def _load_users_file() -> list:
@@ -101,18 +156,17 @@ def _file_authenticate(username: str, password: str) -> Optional[dict]:
         except Exception:
             return None
         role = u.get("role", "Operator")
-        is_sa = role == "SuperAdmin"
         return {
             "username": username,
             "role": role,
-            "is_superadmin": is_sa,
+            "is_superadmin": _is_admin_role(role),
             "reset": bool(u.get("reset", False)),
         }
     return None
 
 
 def _file_check_superadmin(username: str, password: str) -> bool:
-    """Check SuperAdmin status from users.yml."""
+    """Check admin-level access from users.yml."""
     result = _file_authenticate(username, password)
     return result is not None and result["is_superadmin"]
 
@@ -153,7 +207,9 @@ def _mysql_check_superadmin(username: str, password: str) -> bool:
         hashed_bytes = hashed.replace("$2y$", "$2b$").encode()
         if not bcrypt.checkpw(password.encode(), hashed_bytes):
             return False
-        return role == "SuperAdmin" or "SuperAdmin" in (groups or "")
+        # Check if any of the user's roles have admin level
+        all_roles = [role] + [r.strip() for r in (groups or "").split(",") if r.strip()]
+        return any(_is_admin_role(r) for r in all_roles)
     except Exception as exc:
         logger.error("MySQL auth error: %s", exc)
         return False
@@ -180,8 +236,9 @@ def _mysql_authenticate(username: str, password: str) -> Optional[dict]:
         hashed_bytes = hashed.replace("$2y$", "$2b$").encode()
         if not bcrypt.checkpw(password.encode(), hashed_bytes):
             return None
-        is_superadmin = role == "SuperAdmin" or "SuperAdmin" in (groups or "")
-        return {"username": username, "role": role, "is_superadmin": is_superadmin, "reset": bool(reset)}
+        all_roles = [role] + [r.strip() for r in (groups or "").split(",") if r.strip()]
+        is_admin = any(_is_admin_role(r) for r in all_roles)
+        return {"username": username, "role": role, "is_superadmin": is_admin, "reset": bool(reset)}
     except Exception as exc:
         logger.error("MySQL auth error: %s", exc)
         return None
@@ -202,17 +259,36 @@ def _authenticate_user(username: str, password: str) -> Optional[dict]:
 
 
 def _user_can_see_camera(cam: dict, role: str) -> bool:
-    """Return True if a user with *role* may view this camera."""
-    allowed = cam.get("allowed_roles") or ["Supervisor"]
-    # SuperAdmin-only cameras: only SuperAdmin can see them
-    if "SuperAdmin" in allowed and role != "SuperAdmin":
-        return False
-    # Admin-only cameras: SuperAdmin and Admin can see them
-    if "Admin" in allowed and role not in ("SuperAdmin", "Admin"):
-        return False
-    # All other cameras: SuperAdmin/Admin bypass role filtering
-    if role in ("SuperAdmin", "Admin"):
+    """Return True if a user with *role* may view this camera.
+
+    Logic:
+    - Admin-level roles can always see every camera.
+    - Manager-level roles can see cameras unless the camera's allowed_roles
+      contains ONLY admin-level roles (restricted cameras).
+    - Viewer-level roles can only see cameras whose allowed_roles includes
+      their specific role name.
+    """
+    allowed = cam.get("allowed_roles") or []
+    user_level = _role_level(role)
+
+    # Admin always sees everything
+    if user_level == "admin":
         return True
+
+    # If no allowed_roles specified, everyone can see it
+    if not allowed:
+        return True
+
+    # Check if this camera is restricted to admin-only roles
+    all_admin = all(_is_admin_role(r) for r in allowed)
+    if all_admin:
+        return False  # only admin-level roles can see this camera
+
+    # Manager-level can see unless admin-only restricted (handled above)
+    if user_level == "manager":
+        return True
+
+    # Viewer-level must be explicitly listed
     return role in allowed
 
 
@@ -814,7 +890,7 @@ def sso_token():
         role = payload.get("role", "")
         session["username"]     = payload["user"]
         session["user_role"]    = role
-        session["is_superadmin"] = (role == "SuperAdmin")
+        session["is_superadmin"] = _is_admin_role(role)
         logger.info("SSO /auth/token login: user=%s role=%s", payload["user"], role)
         return redirect(url_for("index"))
     except Exception as exc:
@@ -1389,6 +1465,12 @@ def _add_to_frigate_config(name: str, rtsp_url: str) -> bool:
     except Exception as exc:
         logger.error("Failed to update Frigate config: %s", exc)
         return False
+
+
+@app.route("/api/roles")
+def api_roles():
+    """Return the list of configured roles for UI dropdowns."""
+    return jsonify(_get_roles_list())
 
 
 @app.route("/api/cameras/pending")
@@ -2341,6 +2423,9 @@ def api_motion(camera: str):
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    _load_roles()
+    logger.info("Auth backend: %s | Roles: %s", AUTH_BACKEND,
+                ", ".join(f"{n}({l})" for n, l in _roles_map.items()))
     VOD_PATH.mkdir(parents=True, exist_ok=True)
     CHUNKS_PATH.mkdir(parents=True, exist_ok=True)
     (CHUNKS_PATH / "_cache").mkdir(parents=True, exist_ok=True)

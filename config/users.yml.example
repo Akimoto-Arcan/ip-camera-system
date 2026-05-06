@@ -1,23 +1,58 @@
 # ──────────────────────────────────────────────
-#  File-based user database for the camera dashboard
+#  Camera Dashboard — Users & Roles Configuration
 #
-#  Copy this file to users.yml and add your users.
-#  Passwords are bcrypt hashes — generate one with:
-#    docker exec ipcam-dashboard python3 -c "import bcrypt; print(bcrypt.hashpw(b'YOUR_PASSWORD', bcrypt.gensalt()).decode())"
-#
-#  Or use the built-in user management CLI:
-#    docker exec ipcam-dashboard python3 /app/manage_users.py add admin --role SuperAdmin --password changeme
+#  Copy this file to users.yml and customize.
+#  Passwords are bcrypt hashes — generate with the CLI:
+#    docker exec ipcam-dashboard python3 /app/manage_users.py add admin --role Admin --password changeme
 #    docker exec ipcam-dashboard python3 /app/manage_users.py list
 #    docker exec ipcam-dashboard python3 /app/manage_users.py reset-password admin --password newpass
 # ──────────────────────────────────────────────
 
+# ── Roles ────────────────────────────────────
+#  Define your organization's roles here.
+#  Each role has a permission level:
+#    admin   — full access: admin panel, all cameras, system settings
+#    manager — can view all cameras, limited admin features
+#    viewer  — can only view cameras assigned to their role
+#
+#  Rename roles to match your org: "Security", "Plant Manager", "Floor Lead", etc.
+#  The first role with level: admin becomes the system super-admin.
+
+roles:
+  - name: Admin
+    level: admin
+
+  - name: Supervisor
+    level: manager
+
+  - name: Operator
+    level: viewer
+
+  # Examples for other organizations:
+  # - name: Security Director
+  #   level: admin
+  # - name: Security Guard
+  #   level: viewer
+  # - name: IT Admin
+  #   level: admin
+  # - name: Plant Manager
+  #   level: manager
+  # - name: Maintenance
+  #   level: viewer
+  # - name: Shipping
+  #   level: viewer
+
+# ── Users ────────────────────────────────────
+#  Assign each user a role from the list above.
+#  Camera access is controlled by allowed_roles in cameras.yml.
+
 users:
   - username: admin
     password: "$2b$12$UxgB07ZZAA4B2VXNdX.T5OVOOdbUggjd/yuL3/kt4/X5tgOOKdKSK"   # default: changeme
-    role: SuperAdmin
+    role: Admin
     approved: true
 
-  # - username: supervisor1
+  # - username: jsmith
   #   password: "$2b$12$..."
   #   role: Supervisor
   #   approved: true
