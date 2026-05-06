@@ -1,16 +1,19 @@
 """
 ONVIF WS-Discovery Camera Scanner
 
-Probes the configured subnet for ONVIF-compatible cameras.
-Discovered cameras are merged into cameras.yml without overwriting
-any user customisations (credentials, segment_duration, etc.).
+Probes configured subnets for ONVIF-compatible cameras.
+Newly discovered cameras are placed in a pending_cameras queue in
+cameras.yml rather than being added automatically — an admin must
+configure the name, static IP, category, and subcategory via the
+dashboard before they are activated.
 
 Discovery strategy:
   1. WS-Discovery multicast probe (finds cameras that broadcast themselves)
-  2. Unicast ONVIF probe to every IP in the subnet (catches cameras that
+  2. Unicast ONVIF probe to every IP in each subnet (catches cameras that
      don't respond to multicast, e.g. across VLANs or with multicast disabled)
 """
 
+import datetime
 import ipaddress
 import logging
 import os
@@ -33,13 +36,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger("scanner")
 
-CONFIG_PATH = Path(os.environ.get("CONFIG_PATH", "/config/cameras.yml"))
+CONFIG_PATH    = Path(os.environ.get("CONFIG_PATH", "/config/cameras.yml"))
 ONVIF_USERNAME = os.environ.get("ONVIF_USERNAME", "admin")
 ONVIF_PASSWORD = os.environ.get("ONVIF_PASSWORD", "")
-CAMERA_SUBNET = os.environ.get("CAMERA_SUBNET", "192.168.100.0/24")
 
-ONVIF_PORTS = [80, 8080, 8000, 2020]   # common ONVIF HTTP ports
-CONNECT_TIMEOUT = 3                      # seconds per IP probe
+# Comma-separated list of subnets to scan, e.g. "192.168.100.0/24,192.168.1.0/24"
+_SUBNET_ENV    = os.environ.get("CAMERA_SUBNET", "192.168.100.0/24")
+CAMERA_SUBNETS = [s.strip() for s in _SUBNET_ENV.split(",") if s.strip()]
+
+ONVIF_PORTS    = [80, 8080, 8000, 2020]   # common ONVIF HTTP ports
+CONNECT_TIMEOUT = 3                         # seconds per IP probe
 
 
 # ── YAML helpers ──────────────────────────────────────────────────────────────
@@ -108,9 +114,7 @@ def _get_device_name(ip: str, port: int, username: str, password: str) -> str:
         return ""
 
 
-def _probe_ip(
-    ip: str, username: str, password: str
-) -> Optional[dict]:
+def _probe_ip(ip: str, username: str, password: str) -> Optional[dict]:
     """Try each known ONVIF port on *ip*. Return a camera dict or None."""
     for port in ONVIF_PORTS:
         if not _check_onvif_port(ip, port):
@@ -127,54 +131,38 @@ def _probe_ip(
     return None
 
 
-# ── Merge discovered cameras into config ──────────────────────────────────────
+# ── Queue discovered cameras as pending ───────────────────────────────────────
 
-def _make_camera_name(ip: str, existing_names: set, device_name: str = "") -> str:
-    """Generate a unique camera name from the IP (and optional device name)."""
-    octets = ip.split(".")
-    base = f"camera_{octets[-1]}"
-    if device_name:
-        safe = device_name[:20].replace(" ", "_").lower()
-        base = f"{safe}_{octets[-1]}"
-
-    name = base
-    suffix = 1
-    while name in existing_names:
-        name = f"{base}_{suffix}"
-        suffix += 1
-    return name
-
-
-def _merge_cameras(cfg: dict, discovered: list[dict]) -> bool:
+def _queue_pending(cfg: dict, discovered: list[dict]) -> bool:
     """
-    Merge *discovered* camera dicts into cfg["cameras"].
+    Add newly discovered cameras to cfg["pending_cameras"].
+    Skips IPs already in cameras or already pending.
     Returns True if any change was made.
     """
-    cameras: list = cfg.setdefault("cameras", [])
+    cameras: list = cfg.get("cameras", [])
+    pending: list = cfg.setdefault("pending_cameras", [])
+
     existing_ips = {c["ip"] for c in cameras if "ip" in c}
-    existing_names = {c["name"] for c in cameras if "name" in c}
+    pending_ips  = {c["ip"] for c in pending  if "ip" in c}
     changed = False
 
     for found in discovered:
         ip = found["ip"]
-        if ip in existing_ips:
-            continue   # already configured — don't touch user settings
+        if ip in existing_ips or ip in pending_ips:
+            continue
 
-        name = _make_camera_name(ip, existing_names, found.get("device_name", ""))
-        existing_names.add(name)
-        existing_ips.add(ip)
-
-        cameras.append(
-            {
-                "name": name,
-                "ip": ip,
-                "rtsp_url": found["rtsp_url"],
-                "onvif_port": found["onvif_port"],
-                "enabled": True,
-                "segment_duration": 600,
-            }
+        entry = {
+            "ip":           ip,
+            "rtsp_url":     found.get("rtsp_url", ""),
+            "onvif_port":   found.get("onvif_port", 80),
+            "device_name":  found.get("device_name", ""),
+            "discovered_at": datetime.datetime.utcnow().isoformat(timespec="seconds"),
+        }
+        pending.append(entry)
+        logger.info(
+            "Pending camera queued: %s  (%s)",
+            ip, found.get("device_name") or "unknown device",
         )
-        logger.info("Added camera %s at %s  →  %s", name, ip, found["rtsp_url"])
         changed = True
 
     return changed
@@ -193,7 +181,6 @@ def _ws_discovery_scan(username: str, password: str) -> list[dict]:
 
         for svc in services:
             for xaddr in svc.getXAddrs():
-                # Extract IP from xaddr like http://192.168.100.10:80/...
                 try:
                     from urllib.parse import urlparse
                     parsed = urlparse(xaddr)
@@ -233,7 +220,6 @@ def _subnet_scan(subnet: str, username: str, password: str) -> list[dict]:
         threading.Thread(target=probe, args=(i, str(h)), daemon=True)
         for i, h in enumerate(hosts)
     ]
-    # Run up to 32 probes in parallel to keep the scan fast
     chunk = 32
     for start in range(0, len(threads), chunk):
         batch = threads[start : start + chunk]
@@ -250,8 +236,8 @@ def _subnet_scan(subnet: str, username: str, password: str) -> list[dict]:
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
-def run_scan(username: str, password: str, subnet: str) -> None:
-    logger.info("Starting camera scan on %s", subnet)
+def run_scan(username: str, password: str, subnets: list[str]) -> None:
+    logger.info("Starting camera scan on %s", ", ".join(subnets))
 
     discovered: list[dict] = []
 
@@ -260,23 +246,25 @@ def run_scan(username: str, password: str, subnet: str) -> None:
     discovered.extend(ws_found)
     logger.info("WS-Discovery found %d camera(s)", len(ws_found))
 
-    # 2. Unicast fallback — skip IPs already found via WS-Discovery
+    # 2. Unicast fallback across all configured subnets
     known_ips = {d["ip"] for d in discovered}
-    unicast_found = [
-        d for d in _subnet_scan(subnet, username, password)
-        if d["ip"] not in known_ips
-    ]
-    discovered.extend(unicast_found)
-    logger.info("Unicast scan found %d additional camera(s)", len(unicast_found))
+    for subnet in subnets:
+        unicast_found = [
+            d for d in _subnet_scan(subnet, username, password)
+            if d["ip"] not in known_ips
+        ]
+        discovered.extend(unicast_found)
+        known_ips.update(d["ip"] for d in unicast_found)
+        logger.info("Unicast scan found %d additional camera(s) on %s", len(unicast_found), subnet)
 
     if not discovered:
         logger.info("No new cameras found")
         return
 
     cfg = _load_config()
-    if _merge_cameras(cfg, discovered):
+    if _queue_pending(cfg, discovered):
         _save_config(cfg)
-        logger.info("cameras.yml updated")
+        logger.info("cameras.yml updated with pending cameras")
     else:
         logger.info("No new cameras to add")
 
@@ -295,15 +283,16 @@ def main() -> None:
 
     while True:
         try:
-            # Re-read config each cycle in case credentials/subnet changed
             cfg = _load_config()
             scanner_cfg = cfg.get("scanner") or {}
             username = scanner_cfg.get("onvif_username", ONVIF_USERNAME)
             password = scanner_cfg.get("onvif_password", ONVIF_PASSWORD)
-            subnet = scanner_cfg.get("subnet", CAMERA_SUBNET)
+            # Support per-config subnet list or fall back to env var
+            subnet_val = scanner_cfg.get("subnet", _SUBNET_ENV)
+            subnets = [s.strip() for s in str(subnet_val).split(",") if s.strip()]
             scan_interval = int(scanner_cfg.get("scan_interval", 300))
 
-            run_scan(username, password, subnet)
+            run_scan(username, password, subnets)
         except Exception as exc:
             logger.error("Scan error: %s", exc)
 

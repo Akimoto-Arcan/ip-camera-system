@@ -18,6 +18,7 @@ from typing import Dict
 import yaml
 
 from camera import CameraRecorder
+from faststart import start_background_thread as start_faststart_fixer
 from storage import StorageManager
 
 logging.basicConfig(
@@ -148,6 +149,7 @@ def main() -> None:
     signal.signal(signal.SIGINT, _shutdown)
 
     manager.start()
+    start_faststart_fixer(manager.recordings_path, interval=30)
     manager.run_forever()
 
 

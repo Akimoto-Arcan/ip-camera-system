@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FMS Camera System</title>
+  <title>FMS Camera Dashboard</title>
   <style>
     /* ── Design tokens ─────────────────────────────────────── */
     :root {
@@ -331,9 +331,17 @@
     .video-modal-title { font-size: .85rem; font-weight: 600; }
     .video-modal-meta  { font-size: .75rem; color: var(--text2); }
     video { width: 100%; max-height: 70vh; background: #000; display: block; }
+    #video-wrap:fullscreen, #video-wrap:-webkit-full-screen {
+      width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center;
+    }
+    #video-wrap:fullscreen video, #video-wrap:-webkit-full-screen video {
+      max-height: 100vh; width: 100%; height: 100%; object-fit: contain;
+    }
     .hls-error {
       padding: 20px; color: var(--red); font-size: .85rem; text-align: center;
     }
+    .zoom-menu-item { padding: 8px 14px; font-size: .82rem; cursor: pointer; color: var(--text1); }
+    .zoom-menu-item:hover { background: var(--bg4); }
 
     /* ── Storage edit modal ──────────────────────────────────── */
     .storage-form { display: flex; align-items: center; gap: 8px; }
@@ -396,14 +404,6 @@
     .vc-sep { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }
     .vc-time { font-size: .75rem; color: var(--text2);
                font-variant-numeric: tabular-nums; white-space: nowrap; }
-
-    /* ── Zoom context menu ──────────────────────────────────── */
-    .zoom-menu-item {
-      padding: 8px 16px; font-size: .82rem; cursor: pointer;
-      color: var(--text1); white-space: nowrap;
-      transition: background .1s;
-    }
-    .zoom-menu-item:hover { background: var(--bg4); }
 
     /* ── Camera Grid View Modal ─────────────────────────────── */
     #grid-modal.open { align-items: stretch; }
@@ -471,6 +471,53 @@
     }
     .btn-watch-grid:hover { color: var(--blue); border-color: var(--blue); }
 
+    /* ── Camera selection checkboxes ────────────────────────── */
+    .cam-select-cb {
+      position: absolute; top: 8px; left: 8px;
+      width: 18px; height: 18px;
+      accent-color: var(--blue);
+      cursor: pointer; z-index: 10;
+      opacity: 0; transition: opacity .15s;
+    }
+    .camera-card:hover .cam-select-cb,
+    .camera-card.selected .cam-select-cb { opacity: 1; }
+    .camera-card.selected {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 2px rgba(59,130,246,.35);
+    }
+
+    /* ── Selection action bar ────────────────────────────────── */
+    .sel-bar {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: var(--bg2); border: 1px solid var(--blue);
+      border-radius: 10px; padding: 10px 20px;
+      display: flex; align-items: center; gap: 14px;
+      box-shadow: var(--shadow); z-index: 900;
+      opacity: 0; pointer-events: none;
+      transition: opacity .2s, transform .2s;
+      transform: translateX(-50%) translateY(10px);
+    }
+    .sel-bar.visible {
+      opacity: 1; pointer-events: auto;
+      transform: translateX(-50%) translateY(0);
+    }
+    .sel-bar-count { font-size: .85rem; color: var(--text2); white-space: nowrap; }
+    .sel-bar-count strong { color: var(--text1); }
+    .sel-bar-watch {
+      background: var(--blue); border: none; color: #fff;
+      border-radius: 6px; padding: 7px 18px; font-size: .85rem;
+      font-weight: 600; cursor: pointer; white-space: nowrap;
+      transition: background .15s;
+    }
+    .sel-bar-watch:hover { background: #2563eb; }
+    .sel-bar-clear {
+      background: none; border: 1px solid var(--border);
+      color: var(--text2); border-radius: 6px; padding: 6px 12px;
+      font-size: .8rem; cursor: pointer; white-space: nowrap;
+      transition: background .15s;
+    }
+    .sel-bar-clear:hover { background: var(--bg3); color: var(--text1); }
+
     /* ── Toast ──────────────────────────────────────────────── */
     .toast {
       position: fixed; bottom: 20px; right: 20px;
@@ -492,13 +539,18 @@
   <div class="header-brand">
     <div class="logo">📷</div>
     <div>
-      <h1>FMS Camera System</h1>
+      <h1>FMS Camera Dashboard</h1>
       <div class="subtitle" id="header-subnet">192.168.100.0/24</div>
     </div>
   </div>
 
   <div class="header-right">
+    <a href="#" onclick="goToFMSDashboard(); return false;" style="background:var(--bg3);border:1px solid var(--border);color:var(--text1);padding:6px 14px;border-radius:6px;text-decoration:none;font-size:.85rem;font-weight:500;cursor:pointer;">🏠 Dashboard</a>
     <a href="/recordings" style="background:var(--bg3);border:1px solid var(--border);color:var(--text1);padding:6px 14px;border-radius:6px;text-decoration:none;font-size:.85rem;font-weight:500;">📼 Recordings</a>
+    {% if is_superadmin %}
+    <a href="/admin" style="background:var(--bg3);border:1px solid #7c3aed;color:#a78bfa;padding:6px 14px;border-radius:6px;text-decoration:none;font-size:.85rem;font-weight:500;" title="Admin Panel">⚙ Admin</a>
+    {% endif %}
+    <a href="/guide" target="_blank" style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:6px 14px;border-radius:6px;text-decoration:none;font-size:.85rem;" title="User Guide">? Help</a>
     <div class="sys-clock" id="clock">--:--:--</div>
     <div class="storage-widget" title="Click to edit storage limit">
       <div class="storage-label">Storage</div>
@@ -508,6 +560,12 @@
       </div>
       <button class="btn-icon" onclick="openStorageModal()" title="Edit storage limit">✎</button>
     </div>
+    {% if username %}
+    <span style="color:var(--text2);font-size:.8rem;">{{ username }}</span>
+    <form method="post" action="/logout" style="display:inline;">
+      <button type="submit" style="background:none;border:1px solid var(--border);color:var(--text2);padding:3px 10px;border-radius:5px;cursor:pointer;font-size:.78rem;">Sign out</button>
+    </form>
+    {% endif %}
   </div>
 </header>
 
@@ -617,10 +675,34 @@
       </div>
       <button class="modal-close" style="position:static" onclick="closeVideoModal()">×</button>
     </div>
-    <video id="video-player" controls autoplay muted playsinline>
-      <source id="video-source" src="" type="video/mp4">
-    </video>
-    <div class="hls-error" id="hls-error" style="display:none"></div>
+    <div id="video-wrap" style="position:relative;background:#000;width:100%;">
+      <video id="video-player" autoplay muted playsinline>
+        <source id="video-source" src="" type="video/mp4">
+      </video>
+      <div class="hls-error" id="hls-error" style="display:none"></div>
+      <!-- Transparent overlay: pointer-events:none at zoom=1, auto when zoomed.
+           Blocks dblclick→native-fullscreen and handles pan/wheel while zoomed. -->
+      <div id="video-event-overlay" style="position:absolute;top:0;left:0;right:0;bottom:0;z-index:3;pointer-events:none;"></div>
+      <!-- Right-click zoom context menu -->
+      <div id="vc-zoom-menu" style="display:none;position:absolute;z-index:5000;
+           background:var(--bg2);border:1px solid var(--border);border-radius:6px;
+           overflow:hidden;min-width:150px;box-shadow:var(--shadow);">
+        <div class="zoom-menu-item" onclick="vcZoomMenu(2)">🔍 Zoom 2×</div>
+        <div class="zoom-menu-item" onclick="vcZoomMenu(3)">🔍 Zoom 3×</div>
+        <div class="zoom-menu-item" onclick="vcZoomMenu(4)">🔍 Zoom 4×</div>
+        <div class="zoom-menu-item" onclick="vcZoomMenu(1)">↺ Reset Zoom</div>
+      </div>
+      <!-- Zoom slider — always visible, works in fullscreen too -->
+      <div id="vc-zoom-bar" style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);
+           z-index:100;display:flex;align-items:center;gap:8px;
+           background:rgba(0,0,0,0.5);backdrop-filter:blur(4px);
+           border-radius:20px;padding:5px 14px;pointer-events:auto;">
+        <span style="color:#fff;font-size:.75rem;user-select:none;">1×</span>
+        <input type="range" id="vc-zoom-slider" min="1" max="8" step="0.05" value="1"
+               style="width:130px;accent-color:#7c3aed;cursor:pointer;">
+        <span style="color:#fff;font-size:.75rem;user-select:none;">8×</span>
+      </div>
+    </div>
 
     <!-- ── Custom controls ── -->
     <div class="video-controls" id="video-controls" style="display:none;">
@@ -656,15 +738,6 @@
   </div>
 </div>
 
-<!-- ═══════════════════════ ZOOM CONTEXT MENU ════════════════════════════════ -->
-<div id="vc-zoom-menu" style="display:none; position:fixed; z-index:5000;
-     background:var(--bg2); border:1px solid var(--border); border-radius:6px;
-     overflow:hidden; min-width:150px; box-shadow:var(--shadow);">
-  <div class="zoom-menu-item" onclick="vcZoomMenu(2)">🔍 Zoom 2×</div>
-  <div class="zoom-menu-item" onclick="vcZoomMenu(3)">🔍 Zoom 3×</div>
-  <div class="zoom-menu-item" onclick="vcZoomMenu(4)">🔍 Zoom 4×</div>
-  <div class="zoom-menu-item" onclick="vcZoomMenu(1)">↺ Reset Zoom</div>
-</div>
 
 <!-- ═══════════════════════ CAMERA GRID MODAL ════════════════════════════════ -->
 <div class="modal-overlay" id="grid-modal">
@@ -688,6 +761,13 @@
   <div class="zoom-menu-item" onclick="gridOpenSingle()">↗ Open in Single View</div>
 </div>
 
+<!-- ═══════════════════════ SELECTION BAR ════════════════════════════════════ -->
+<div class="sel-bar" id="sel-bar">
+  <span class="sel-bar-count"><strong id="sel-count">0</strong> camera(s) selected</span>
+  <button class="sel-bar-watch" onclick="watchSelected()">⊞ Watch Selected</button>
+  <button class="sel-bar-clear" onclick="clearSelection()">✕ Clear</button>
+</div>
+
 <!-- ═══════════════════════ TOAST ════════════════════════════════════════════ -->
 <div class="toast" id="toast"></div>
 
@@ -697,19 +777,66 @@
 <script>
 'use strict';
 
+const IS_SUPERADMIN = {{ 'true' if is_superadmin else 'false' }};
+
 let _hlsInstance   = null;
 let _statusInterval = null;
 let _serverTime    = null;   // ISO string from last /api/status call
 let _pingResults   = {};     // {cameraName: true|false}
 let _dashLayout    = {};     // { category_order: [], subcategory_order: {} }
 let _latestCameras = {};     // latest cameras map from /api/status
-const _DVR_TYPES   = new Set(['tigersecu', 'dvr_direct', 'swiftconnection']);
+const _DVR_TYPES   = new Set(['dvr_direct']);
 
 /* ── Camera grid view state ─────────────────────────────────────────────────── */
-let _gridHlsInstances = [];   // HLS.js instances, one per cell
-let _gridCameras      = [];   // camera names currently in the grid
-let _gridFocused      = -1;   // index of focused cell, -1 = grid mode
-let _gridCtxIdx       = -1;   // which cell the context menu was opened on
+let _gridHlsInstances  = [];   // HLS.js instances, one per cell
+let _gridCameras       = [];   // camera names currently in the grid
+let _gridFocused       = -1;   // index of focused cell, -1 = grid mode
+let _gridCtxIdx        = -1;   // which cell the context menu was opened on
+let _gridStallInterval = null; // stall-detection timer for grid cells
+
+/* ── Single video modal stall detection ─────────────────────────────────────── */
+let _vcStallInterval = null;   // stall-detection timer for single view
+
+/* ── Multi-camera selection ─────────────────────────────────────────────────── */
+const _selectedCams = new Set();
+
+function toggleCamSelect(name, cb) {
+  if (cb.checked) _selectedCams.add(name);
+  else            _selectedCams.delete(name);
+  const card = document.getElementById(`cam-card-${name}`);
+  if (card) card.classList.toggle('selected', cb.checked);
+  _updateSelBar();
+}
+
+function clearSelection() {
+  _selectedCams.clear();
+  document.querySelectorAll('.camera-card.selected').forEach(c => {
+    c.classList.remove('selected');
+    const cb = c.querySelector('.cam-select-cb');
+    if (cb) cb.checked = false;
+  });
+  _updateSelBar();
+}
+
+function _updateSelBar() {
+  const bar = document.getElementById('sel-bar');
+  const n   = _selectedCams.size;
+  document.getElementById('sel-count').textContent = n;
+  bar.classList.toggle('visible', n > 0);
+}
+
+function watchSelected() {
+  const names = [..._selectedCams].filter(n => {
+    const cfg = _latestCameras[n]?.config || {};
+    return !_DVR_TYPES.has(cfg.type);
+  });
+  if (!names.length) { showToast('No streamable cameras selected', 'error'); return; }
+  _gridCameras = names;
+  _gridFocused = -1;
+  document.getElementById('grid-modal-title').textContent = `Selected Cameras (${names.length})`;
+  _buildGrid(names);
+  openModal('grid-modal');
+}
 
 /* ── Utility ────────────────────────────────────────────────────────────────── */
 function fmtSize(mb) {
@@ -767,6 +894,7 @@ async function updateStatus() {
     _serverTime = data.server_time;
     renderStorage(data.storage || {});
     renderCameras(data.cameras || {});
+    _handleUrlParams();
   } catch (e) {
     console.warn('Status fetch error:', e);
   }
@@ -905,19 +1033,17 @@ function _buildCardHtml(name, cam) {
   const dvrUrl = cam.config?.dvr_url || `https://${ip}`;
 
   let actionBtn;
-  if (type === 'tigersecu') {
-    actionBtn = `<button class="btn-sm primary" onclick="openDvrViewer('${escHtml(ip)}',${ch},${dvrIdx},event)">▶ View DVR</button>`;
-  } else if (type === 'dvr_direct') {
+  if (type === 'dvr_direct') {
     actionBtn = `<button class="btn-sm primary" onclick="openDvrDirect('${escHtml(dvrUrl)}',event)">▶ Open DVR</button>`;
-  } else if (type === 'swiftconnection') {
-    actionBtn = `<button class="btn-sm primary" onclick="openSwiftConn('${escHtml(ip)}',event)">▶ Open DVR</button>`;
   } else {
     actionBtn = `<button class="btn-sm primary" onclick="openLiveView('${escHtml(name)}', event)">▶ Live</button>`;
   }
 
-  const subLabel = type === 'tigersecu' ? `Ch ${ch}` : (type === 'swiftconnection' ? 'SwiftConn' : '');
+  const subLabel = '';
 
   return { cls, html: `
+    <input type="checkbox" class="cam-select-cb" title="Select for multi-view"
+      onchange="toggleCamSelect('${escHtml(name)}', this)" onclick="event.stopPropagation()">
     <div class="camera-card-header">
       ${raw === 'recording' ? '<div class="rec-badge">REC</div>' : ''}
       <div>
@@ -930,18 +1056,10 @@ function _buildCardHtml(name, cam) {
     <div class="cam-status-text ${cls}">${text}</div>
     <div class="cam-actions">
       ${actionBtn}
-      <button class="btn-sm" onclick="openCamEditModal('${escHtml(name)}', event)" title="Edit name / category">✎</button>
+      <a class="btn-sm" href="/recordings?cam=${encodeURIComponent(name)}" title="Watch recordings">📼</a>
+      ${IS_SUPERADMIN ? `<button class="btn-sm" onclick="openCamEditModal('${escHtml(name)}', event)" title="Edit name / category">✎</button>` : ''}
     </div>`
   };
-}
-
-function openSwiftConn(ip, evt) {
-  if (evt) evt.stopPropagation();
-  const winName = 'dvr_' + ip.replace(/\./g, '_');
-  const win = window.open(`http://${ip}:5000`, winName,
-    'width=1024,height=768,menubar=no,toolbar=no,location=yes');
-  if (win) win.focus();
-  else showToast('Popup blocked — allow popups for this site', 'error');
 }
 
 function openDvrDirect(url, evt) {
@@ -956,55 +1074,40 @@ function openDvrDirect(url, evt) {
   else showToast('Popup blocked — allow popups for this site', 'error');
 }
 
-// Track open DVR proxy windows so we can postMessage instead of reloading
-const _dvrProxyWindows = {};
-
-function openDvrViewer(ip, channel, dvr_idx, evt) {
-  if (evt) evt.stopPropagation();
-  const winName  = 'dvr_proxy_' + dvr_idx;
-  // Must use HTTPS — SharedArrayBuffer (required by DVR WASM) only works in a
-  // secure context.  The self-signed cert will prompt a one-time browser warning.
-  const proxyUrl = `https://${window.location.hostname}/dvr-proxy/${dvr_idx}/webindex.html?channel=${channel}`;
-
-  const existing = _dvrProxyWindows[winName];
-  if (existing && !existing.closed) {
-    // Window already open and logged in — switch channel without reload
-    try {
-      existing.postMessage({ type: 'dvr_switch_channel', channel: channel }, '*');
-      existing.focus();
-      showToast(`DVR ${dvr_idx} → Channel ${channel}`, 'info');
-    } catch(_) {
-      // Cross-origin (e.g. redirected to DVR login) — just focus it
-      existing.focus();
-    }
-    return;
-  }
-
-  const win = window.open(proxyUrl, winName,
-    'width=1280,height=800,menubar=no,toolbar=no,location=yes,status=no');
-  if (win) {
-    _dvrProxyWindows[winName] = win;
-    win.focus();
-    showToast(`Opening DVR ${dvr_idx} Ch ${channel} — log in once to keep the session`, 'info');
-  } else {
-    showToast('Popup blocked — allow popups for this site', 'error');
-  }
-}
 
 function _placeCard(name, cam, grid) {
   const { cls, html } = _buildCardHtml(name, cam);
   const cardId = `cam-card-${name}`;
+  const isSelected = _selectedCams.has(name);
   let card = document.getElementById(cardId);
   if (card) {
-    card.className = `camera-card ${cls}`;
+    card.className = `camera-card ${cls}${isSelected ? ' selected' : ''}`;
     card.innerHTML = html;
+    if (isSelected) { const cb = card.querySelector('.cam-select-cb'); if (cb) cb.checked = true; }
     if (card.parentElement !== grid) grid.appendChild(card);
   } else {
     card = document.createElement('div');
-    card.id = cardId; card.className = `camera-card ${cls}`;
+    card.id = cardId; card.className = `camera-card ${cls}${isSelected ? ' selected' : ''}`;
     card.dataset.name = name; card.innerHTML = html;
+    if (isSelected) { const cb = card.querySelector('.cam-select-cb'); if (cb) cb.checked = true; }
     grid.appendChild(card);
   }
+}
+
+let _urlParamHandled = false;
+function _handleUrlParams() {
+  if (_urlParamHandled) return;
+  const p   = new URLSearchParams(location.search);
+  const sub = p.get('sub');
+  const cat = p.get('cat');
+  if (!sub) return;
+  _urlParamHandled = true;
+  // Find the matching subcategory across loaded cameras
+  const matchCat = cat || Object.keys(Object.values(_latestCameras).reduce((m, c) => {
+    if (c.config?.subcategory === sub) m[c.config?.category || ''] = 1;
+    return m;
+  }, {}))[0] || null;
+  openCameraGrid(sub, matchCat, sub);
 }
 
 function renderCameras(cameras) {
@@ -1106,8 +1209,10 @@ function renderCameras(cameras) {
     orderedSubKeys.forEach(sub => {
       const names = subMap[sub];
       const subStreamable = names.some(n => !_DVR_TYPES.has(cameras[n]?.config?.type));
-      const subWatchBtn   = subStreamable
-        ? `<button class="btn-watch-grid" onclick="event.stopPropagation();openCameraGrid('${escHtml(sub)}','${escHtml(cat)}','${escHtml(sub)}')">⊞ Watch</button>`
+      const subLink = `${location.origin}${location.pathname}?cat=${encodeURIComponent(cat)}&sub=${encodeURIComponent(sub)}`;
+      const subWatchBtn = subStreamable
+        ? `<button class="btn-watch-grid" onclick="event.stopPropagation();openCameraGrid('${escHtml(sub)}','${escHtml(cat)}','${escHtml(sub)}')">⊞ Watch</button>` +
+          `<button class="btn-watch-grid" title="Copy link to ${escHtml(sub)} cameras" onclick="event.stopPropagation();navigator.clipboard.writeText('${escHtml(subLink)}').then(()=>showToast('Link copied','info'))">🔗</button>`
         : '';
       let subSec = body.querySelector(`[data-subcat-section="${CSS.escape(sub)}"]`);
       if (!subSec) {
@@ -1161,7 +1266,8 @@ function openLiveView(camName, evt) {
   if (evt) evt.stopPropagation();
   _vodCamera = camName;
   _vodStartDatetime = null;
-  const liveUrl = _latestCameras[camName]?.live_url || `/go2rtc/api/stream.mp4?src=${encodeURIComponent(camName)}`;
+  const base = _latestCameras[camName]?.live_url || `/go2rtc/api/stream.mp4?src=${encodeURIComponent(camName)}`;
+  const liveUrl = base + '&_t=' + Date.now();
   openVideoModal(camName + ' — Live', liveUrl, 'live', false);
 }
 
@@ -1216,10 +1322,56 @@ function openVideoModal(title, src, meta, isHls = false) {
   }
 
   openModal('video-modal');
+
+  // Stall detection + auto-reconnect for live streams
+  clearInterval(_vcStallInterval); _vcStallInterval = null;
+  if (isLive && !isHls) {
+    const _stallBase = src.replace(/[?&]_t=\d+/, '');
+    let _stallPrev = -1;
+    let _vcRetries = 0;
+
+    // Reconnect helper used by both stall detection and onerror
+    const _reconnect = () => {
+      if (_vcRetries >= 60) return; // give up after ~5 min of retries
+      _vcRetries++;
+      const sep = _stallBase.includes('?') ? '&' : '?';
+      const newSrc = _stallBase + sep + '_t=' + Date.now();
+      const s = document.getElementById('video-source');
+      const v = document.getElementById('video-player');
+      s.src = newSrc;
+      v.load();
+      v.play().catch(() => {});
+      _stallPrev = -1;
+      document.getElementById('hls-error').style.display = 'none';
+    };
+
+    // Stall detection — if currentTime stops advancing, reconnect
+    _vcStallInterval = setInterval(() => {
+      const v = document.getElementById('video-player');
+      if (!v || v.paused || v.ended || !document.getElementById('video-modal').classList.contains('open')) {
+        _stallPrev = v ? v.currentTime : -1;
+        return;
+      }
+      const ct = v.currentTime;
+      if (_stallPrev >= 0 && ct === _stallPrev) {
+        _reconnect();
+      } else {
+        _stallPrev = ct;
+        _vcRetries = 0; // reset retry count when stream is healthy
+      }
+    }, 5000);
+
+    // Error handler — auto-reconnect after 5s instead of giving up
+    video.onerror = () => {
+      if (!document.getElementById('video-modal').classList.contains('open')) return;
+      setTimeout(_reconnect, 5000);
+    };
+  }
 }
 
 function closeVideoModal() {
   if (_hlsInstance) { _hlsInstance.destroy(); _hlsInstance = null; }
+  clearInterval(_vcStallInterval); _vcStallInterval = null;
   clearInterval(_vcTimeInterval); _vcTimeInterval = null;
   _vcStopRecord(false);
   const video = document.getElementById('video-player');
@@ -1301,14 +1453,51 @@ function _buildGrid(names) {
     container.appendChild(cell);
 
     const video = cell.querySelector('video');
-    const src   = _latestCameras[name]?.live_url || `/go2rtc/api/stream.mp4?src=${encodeURIComponent(name)}`;
-    video.src = src;
+    const baseUrl = _latestCameras[name]?.live_url || `/go2rtc/api/stream.mp4?src=${encodeURIComponent(name)}`;
+    video.src = baseUrl + '&_t=' + Date.now();
     video.play().catch(() => {});
-    video.onerror = () => { cell.querySelector('.grid-cell-error').style.display = ''; };
+    // Auto-reconnect on error — retry up to 60 times (5 min of retries at 5 s intervals)
+    cell._retries = 0;
+    video.onerror = () => {
+      if (cell._retries >= 60 || !document.getElementById('grid-modal').classList.contains('open')) {
+        cell.querySelector('.grid-cell-error').style.display = '';
+        return;
+      }
+      cell._retries++;
+      setTimeout(() => {
+        video.src = baseUrl + '&_t=' + Date.now();
+        video.load();
+        video.play().catch(() => {});
+      }, 5000);
+    };
   });
+
+  // Stall detection — one shared interval checks every cell every 5 s
+  clearInterval(_gridStallInterval);
+  _gridStallInterval = setInterval(() => {
+    const container = document.getElementById('grid-cells');
+    if (!container || !document.getElementById('grid-modal').classList.contains('open')) return;
+    container.querySelectorAll('.grid-cell').forEach(cell => {
+      const v = cell.querySelector('video');
+      if (!v || v.paused || v.ended) return;
+      const prev = cell._stallPrev ?? -1;
+      const ct = v.currentTime;
+      if (prev >= 0 && ct === prev) {
+        const name = _gridCameras[+cell.dataset.idx];
+        const base = _latestCameras[name]?.live_url || `/go2rtc/api/stream.mp4?src=${encodeURIComponent(name)}`;
+        v.src = base + '&_t=' + Date.now();
+        v.load();
+        v.play().catch(() => {});
+        cell._stallPrev = -1;
+      } else {
+        cell._stallPrev = ct;
+      }
+    });
+  }, 5000);
 }
 
 function closeCameraGrid() {
+  clearInterval(_gridStallInterval); _gridStallInterval = null;
   _gridHlsInstances.forEach(h => h && h.destroy());
   _gridHlsInstances = [];
   _gridCameras = [];
@@ -1408,7 +1597,7 @@ let _vcDragStartX     = 0;
 let _vcDragStartY     = 0;
 let _vcPanStartX      = 0;
 let _vcPanStartY      = 0;
-let _vcZoomClickX     = 0;     // video-relative click position for context menu zoom
+let _vcZoomClickX     = 0;
 let _vcZoomClickY     = 0;
 
 function _setupVideoControls(mode) {
@@ -1534,15 +1723,21 @@ function vcJumpToTime() {
 
 /* ── Zoom: right-click context menu + drag-to-pan ────────────────────────────── */
 function _vcApplyZoom() {
-  const video = document.getElementById('video-player');
+  const video   = document.getElementById('video-player');
+  const overlay = document.getElementById('video-event-overlay');
   video.style.transformOrigin = '0 0';
   if (_vcZoomScale <= 1) {
     video.style.transform = '';
-    video.style.cursor = '';
+    if (overlay) { overlay.style.pointerEvents = 'none'; overlay.style.cursor = ''; }
   } else {
     video.style.transform = `translate(${_vcPanX}px, ${_vcPanY}px) scale(${_vcZoomScale})`;
-    video.style.cursor = _vcDragging ? 'grabbing' : 'grab';
+    if (overlay) {
+      overlay.style.pointerEvents = 'auto';
+      overlay.style.cursor = _vcDragging ? 'grabbing' : 'grab';
+    }
   }
+  const slider = document.getElementById('vc-zoom-slider');
+  if (slider) slider.value = _vcZoomScale;
 }
 
 function _vcClampPan() {
@@ -1564,45 +1759,66 @@ function _vcZoomToPoint(newScale, cx, cy) {
   _vcApplyZoom();
 }
 
-function vcZoomMenu(level) {
-  document.getElementById('vc-zoom-menu').style.display = 'none';
-  if (level <= 1) {
-    _vcZoomScale = 1; _vcPanX = 0; _vcPanY = 0;
-    _vcApplyZoom();
-  } else {
-    _vcZoomToPoint(level, _vcZoomClickX, _vcZoomClickY);
-  }
-}
-
-// Right-click → show zoom context menu
-document.getElementById('video-player').addEventListener('contextmenu', e => {
+// Right-click → zoom context menu (works cleanly without native video controls)
+document.getElementById('video-wrap').addEventListener('contextmenu', e => {
   e.preventDefault();
-  const rect = e.currentTarget.getBoundingClientRect();
-  _vcZoomClickX = e.clientX - rect.left;
-  _vcZoomClickY = e.clientY - rect.top;
+  const wrap = document.getElementById('video-wrap');
+  const rect = wrap.getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
   const menu = document.getElementById('vc-zoom-menu');
+  menu.style.left = cx + 'px';
+  menu.style.top  = cy + 'px';
   menu.style.display = '';
-  menu.style.left = e.clientX + 'px';
-  menu.style.top  = e.clientY + 'px';
-  // Shift menu if it would overflow the viewport
+  // Store click position for zoom-to-point
+  _vcZoomClickX = cx; _vcZoomClickY = cy;
   requestAnimationFrame(() => {
-    const mw = menu.offsetWidth, mh = menu.offsetHeight;
-    if (e.clientX + mw > window.innerWidth)  menu.style.left = (e.clientX - mw) + 'px';
-    if (e.clientY + mh > window.innerHeight) menu.style.top  = (e.clientY - mh) + 'px';
+    const maxL = wrap.offsetWidth  - menu.offsetWidth;
+    const maxT = wrap.offsetHeight - menu.offsetHeight;
+    if (cx > maxL) menu.style.left = Math.max(0, maxL) + 'px';
+    if (cy > maxT) menu.style.top  = Math.max(0, maxT) + 'px';
   });
 });
 
-// Click anywhere else → hide zoom menu
-document.addEventListener('click', e => {
-  const menu = document.getElementById('vc-zoom-menu');
-  if (!menu.contains(e.target)) menu.style.display = 'none';
+// Double-click → fullscreen the wrap; blocked when zoomed (overlay intercepts).
+document.getElementById('video-player').addEventListener('dblclick', e => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (_vcZoomScale > 1) return;  // don't enter fullscreen while zoomed
+  const wrap = document.getElementById('video-wrap');
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    (wrap.requestFullscreen || wrap.webkitRequestFullscreen).call(wrap);
+  } else {
+    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  }
 });
 
-// Drag to pan while zoomed
-const _vp = document.getElementById('video-player');
-_vp.addEventListener('mousedown', e => {
-  if (e.button !== 0 || _vcZoomScale <= 1) return;
-  _vcDragging  = true;
+// Reset zoom when entering/leaving fullscreen — coordinates are based on element
+// size which changes between modal and fullscreen, so the old values are invalid.
+['fullscreenchange', 'webkitfullscreenchange'].forEach(ev => {
+  document.addEventListener(ev, () => {
+    _vcZoomScale = 1; _vcPanX = 0; _vcPanY = 0;
+    _vcApplyZoom();
+    document.getElementById('vc-zoom-menu').style.display = 'none';
+  });
+});
+
+// When zoom > 1 the overlay is active (pointer-events:auto) and captures events.
+// Pan, wheel, and dblclick are handled on the overlay; dblclick on video-player
+// handles fullscreen only when zoom = 1 (overlay is pointer-events:none).
+const _overlay = document.getElementById('video-event-overlay');
+
+// Overlay: in fullscreen allow dblclick to EXIT; when zoomed, block entering fullscreen
+_overlay.addEventListener('dblclick', e => {
+  e.preventDefault(); e.stopPropagation();
+  const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  if (isFS) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+});
+
+// Overlay: drag to pan
+_overlay.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  _vcDragging = true;
   _vcDragStartX = e.clientX; _vcDragStartY = e.clientY;
   _vcPanStartX  = _vcPanX;  _vcPanStartY  = _vcPanY;
   e.preventDefault();
@@ -1621,16 +1837,42 @@ document.addEventListener('mouseup', () => {
   _vcApplyZoom();
 });
 
-// Scroll wheel → smooth zoom
-_vp.addEventListener('wheel', e => {
+// Scroll wheel zoom — on overlay (active when zoomed) and on video (active when not zoomed)
+function _vcHandleWheel(e) {
   e.preventDefault();
-  const rect = _vp.getBoundingClientRect();
+  const wrap = document.getElementById('video-wrap');
+  const rect = wrap.getBoundingClientRect();
   const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
   const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
   const newScale = Math.max(1, Math.min(8, _vcZoomScale * factor));
   if (newScale <= 1) { _vcZoomScale = 1; _vcPanX = 0; _vcPanY = 0; _vcApplyZoom(); }
   else               { _vcZoomToPoint(newScale, cx, cy); }
-}, { passive: false });
+}
+_overlay.addEventListener('wheel', _vcHandleWheel, { passive: false });
+document.getElementById('video-player').addEventListener('wheel', _vcHandleWheel, { passive: false });
+
+// Zoom menu item click handler
+function vcZoomMenu(level) {
+  document.getElementById('vc-zoom-menu').style.display = 'none';
+  if (level <= 1) { _vcZoomScale = 1; _vcPanX = 0; _vcPanY = 0; _vcApplyZoom(); }
+  else            { _vcZoomToPoint(level, _vcZoomClickX, _vcZoomClickY); }
+}
+// Hide zoom menu on click elsewhere
+document.addEventListener('click', e => {
+  const menu = document.getElementById('vc-zoom-menu');
+  if (menu && !menu.contains(e.target)) menu.style.display = 'none';
+});
+
+// Zoom slider
+document.getElementById('vc-zoom-slider').addEventListener('input', e => {
+  const level = parseFloat(e.target.value);
+  if (level <= 1) {
+    _vcZoomScale = 1; _vcPanX = 0; _vcPanY = 0; _vcApplyZoom();
+  } else {
+    const wrap = document.getElementById('video-wrap');
+    _vcZoomToPoint(level, wrap.offsetWidth / 2, wrap.offsetHeight / 2);
+  }
+});
 
 /* ── Live recording (clips to excerpt) ──────────────────────────────────────── */
 function vcToggleRecord() {
@@ -1699,7 +1941,7 @@ async function openCamEditModal(name, evt) {
     const cam = cams.find(c => c.name === name);
     if (!cam) { showToast('Camera not found', 'error'); return; }
 
-    const isDvr = (cam.type === 'tigersecu' || cam.type === 'swiftconnection');
+    const isDvr = (cam.type === 'dvr_direct');
 
     document.getElementById('cam-edit-original-name').value = name;
     document.getElementById('cam-edit-type').value          = cam.type || '';
@@ -1732,7 +1974,7 @@ async function openCamEditModal(name, evt) {
 async function saveCameraEdit() {
   const originalName = document.getElementById('cam-edit-original-name').value;
   const type = document.getElementById('cam-edit-type').value;
-  const isDvr = (type === 'tigersecu' || type === 'swiftconnection');
+  const isDvr = (type === 'dvr_direct');
 
   const payload = {
     name:       document.getElementById('cam-edit-name').value.trim(),
@@ -1771,6 +2013,20 @@ async function saveCameraEdit() {
   } catch (e) {
     showToast('Network error', 'error');
     btn.disabled = false; btn.textContent = 'Save';
+  }
+}
+
+/* ── FMS Dashboard navigation ───────────────────────────────────────────────── */
+function goToFMSDashboard() {
+  // If this tab was opened from the FMS dashboard, focus that tab and close this one.
+  // Falls back to SSO redirect navigation if no opener is available.
+  if (window.opener && !window.opener.closed) {
+    try { window.opener.focus(); } catch (e) { /* cross-origin focus blocked */ }
+    window.close();
+    // If close didn't fire (browser restriction), navigate after a short delay
+    setTimeout(() => { location.href = '/auth/fms-redirect'; }, 400);
+  } else {
+    location.href = '/auth/fms-redirect';
   }
 }
 

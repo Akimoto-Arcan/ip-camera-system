@@ -1,20 +1,7 @@
-# ─────────────────────────────────────────────────────────────────────────────
-#  Frigate NVR — configuration
-#
-#  Only RTSP cameras (enabled: true) are managed here.
-#  DVR cameras (TigerSecu) are handled separately by the DVR proxy.
-#
-#  Add new cameras by appending entries under go2rtc.streams and cameras.
-#  Camera names must match cameras.yml exactly (Frigate only allows [a-z0-9_]).
-# ─────────────────────────────────────────────────────────────────────────────
-
 mqtt:
-  enabled: false          # set to true and add broker config if using Home Assistant
-
+  enabled: false
 database:
   path: /config/frigate.db
-
-# ── Global recording defaults ─────────────────────────────────────────────────
 record:
   enabled: true
   alerts:
@@ -23,8 +10,6 @@ record:
   detections:
     retain:
       days: 60
-
-# ── Snapshots ─────────────────────────────────────────────────────────────────
   continuous:
     days: 30
   motion:
@@ -33,31 +18,31 @@ snapshots:
   enabled: true
   retain:
     default: 30
-
-# ── Detection — disabled globally (no Coral TPU). Enable per-camera if added ──
 detectors:
   cpu1:
     type: cpu
     num_threads: 2
-
-# ── go2rtc — live stream sources ──────────────────────────────────────────────
-# Each key must match the camera name in the cameras section below.
-# go2rtc exposes HLS at /api/stream.m3u8?src=<name> on port 1984.
 go2rtc:
   streams:
     Maintenance_Shop:
-      - "ffmpeg:rtsp://admin:123456@192.168.100.45:554/stream0#video=h264#audio=copy"
+    - ffmpeg:rtsp://admin:123456@192.168.100.45:554/stream0#video=h264#audio=copy
     DBP2_Winders:
-      - "ffmpeg:rtsp://admin:123456@192.168.100.10:554/stream0#video=h264#audio=copy"
-
-# ── Cameras ───────────────────────────────────────────────────────────────────
+    - ffmpeg:rtsp://admin:123456@192.168.100.10:554/stream0#video=h264#audio=copy
+    DBP2_Unwinder:
+    - ffmpeg:rtsp://admin:123456@192.168.100.11:554/stream0#video=h264#audio=copy
+    new:
+    - ffmpeg:rtsp://192.168.100.13:554/stream0?username=admin&password=E10ADC3949BA59ABBE56E057F20F883E#video=h264#audio=copy
+    new2:
+    - ffmpeg:rtsp://192.168.100.14:554/stream0?username=admin&password=E10ADC3949BA59ABBE56E057F20F883E#video=h264#audio=copy
+    DBP2_Operator:
+    - ffmpeg:rtsp://192.168.100.12:554/stream0?username=admin&password=E10ADC3949BA59ABBE56E057F20F883E#video=h264#audio=copy
 cameras:
   Maintenance_Shop:
     ffmpeg:
       inputs:
-        - path: rtsp://admin:123456@192.168.100.45:554/stream0
-          roles:
-            - record
+      - path: rtsp://admin:123456@192.168.100.45:554/stream0
+        roles:
+        - record
     record:
       enabled: true
     detect:
@@ -66,13 +51,68 @@ cameras:
       height: 1080
     snapshots:
       enabled: true
-
   DBP2_Winders:
     ffmpeg:
       inputs:
-        - path: rtsp://admin:123456@192.168.100.10:554/stream0
-          roles:
-            - record
+      - path: rtsp://admin:123456@192.168.100.10:554/stream0
+        roles:
+        - record
+    record:
+      enabled: true
+    detect:
+      enabled: false
+      width: 1920
+      height: 1080
+    snapshots:
+      enabled: true
+  DBP2_Unwinder:
+    ffmpeg:
+      inputs:
+      - path: rtsp://admin:123456@192.168.100.11:554/stream0
+        roles:
+        - record
+    record:
+      enabled: true
+    detect:
+      enabled: false
+      width: 1920
+      height: 1080
+    snapshots:
+      enabled: true
+  new:
+    ffmpeg:
+      inputs:
+      - path: rtsp://192.168.100.13:554/stream0?username=admin&password=E10ADC3949BA59ABBE56E057F20F883E
+        roles:
+        - record
+    record:
+      enabled: true
+    detect:
+      enabled: false
+      width: 1920
+      height: 1080
+    snapshots:
+      enabled: true
+  new2:
+    ffmpeg:
+      inputs:
+      - path: rtsp://192.168.100.14:554/stream0?username=admin&password=E10ADC3949BA59ABBE56E057F20F883E
+        roles:
+        - record
+    record:
+      enabled: true
+    detect:
+      enabled: false
+      width: 1920
+      height: 1080
+    snapshots:
+      enabled: true
+  DBP2_Operator:
+    ffmpeg:
+      inputs:
+      - path: rtsp://192.168.100.12:554/stream0?username=admin&password=E10ADC3949BA59ABBE56E057F20F883E
+        roles:
+        - record
     record:
       enabled: true
     detect:

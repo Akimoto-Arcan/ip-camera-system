@@ -246,7 +246,14 @@
 <header>
   <h1>📼 Recordings</h1>
   <div class="header-right">
-    <a href="/">← Dashboard</a>
+    <a href="/">← Camera Dashboard</a>
+    <a href="/guide" target="_blank">? Help</a>
+    {% if username %}
+    <span style="color:var(--text2);font-size:.8rem;">{{ username }}</span>
+    <form method="post" action="/logout" style="display:inline;">
+      <button type="submit" style="background:none;border:1px solid var(--border);color:var(--text2);padding:3px 10px;border-radius:5px;cursor:pointer;font-size:.78rem;">Sign out</button>
+    </form>
+    {% endif %}
   </div>
 </header>
 
@@ -392,6 +399,10 @@ async function load() {
   _cameras    = statusData.cameras || {};
   _recSummary = recData;
   render();
+
+  // Deep-link: /recordings?cam=CameraName auto-opens the watch modal
+  const urlCam = new URLSearchParams(window.location.search).get('cam');
+  if (urlCam && _recSummary[urlCam]) openWatch(urlCam);
 }
 
 function render() {
@@ -491,7 +502,7 @@ async function startVod(fromDt) {
   let d;
   try {
     const utcFrom = new Date(dtVal).toISOString();
-    const r = await fetch(`/api/recordings/${encodeURIComponent(_watchCam)}/vod`, {
+    const r = await fetch(`/api/recordings/${encodeURIComponent(_watchCam)}/instant-vod`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ from: utcFrom, hours: 12 }),
@@ -535,8 +546,8 @@ async function startVod(fromDt) {
   }
 
   if (d.building) {
-    // Poll until the MP4 is ready
-    showVideoError('Loading shift…', 'This will take roughly 2 minutes to load shift');
+    // Legacy fallback: poll until the MP4 is ready
+    showVideoError('Loading shift…', 'Preparing recording…');
     const sid = d.session_id;
     const cam = _watchCam;
     const poll = setInterval(async () => {
@@ -554,9 +565,10 @@ async function startVod(fromDt) {
           openVideo(`${cam} — from ${label}`, sd.url, actualStart);
         }
       } catch { /* network blip, keep polling */ }
-    }, 3000);
+    }, 2000);
   } else {
     openVideo(`${_watchCam} — from ${label}`, d.url, actualStart);
+    if (!fromDt) { btn.disabled = false; btn.textContent = '▶ Play'; }
   }
 }
 
@@ -619,15 +631,23 @@ function openVideo(title, src, wallClockStart) {
   } else if (Hls.isSupported()) {
     _hlsInst = new Hls({
       enableWorker: true, lowLatencyMode: false,
-      maxBufferLength: 30, maxMaxBufferLength: 60,
+      maxBufferLength: 30, maxMaxBufferLength: 120,
+      fragLoadingTimeOut: 120000,      // 2 min — segments need on-demand transcoding
+      fragLoadingMaxRetry: 6,
+      fragLoadingRetryDelay: 2000,
+      manifestLoadingTimeOut: 30000,
+      levelLoadingTimeOut: 30000,
     });
     _hlsInst.loadSource(src);
     _hlsInst.attachMedia(video);
     _hlsInst.on(Hls.Events.MANIFEST_PARSED, () => { video.play().catch(() => {}); });
     _hlsInst.on(Hls.Events.ERROR, (evt, data) => {
       if (!data.fatal) return;
-      if (data.type === Hls.ErrorTypes.MEDIA_ERROR && _mediaErrCount < 2) {
+      if (data.type === Hls.ErrorTypes.MEDIA_ERROR && _mediaErrCount < 5) {
         _mediaErrCount++; _hlsInst.recoverMediaError(); return;
+      }
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && _mediaErrCount < 5) {
+        _mediaErrCount++; _hlsInst.startLoad(); return;
       }
       const detail = data.response ? `HTTP ${data.response.code}` : (data.type || '');
       showVideoError('Playback failed — ' + (data.details || 'unknown error'), detail);
@@ -770,7 +790,8 @@ let _tlDragMs   = null;               // wall-clock ms of drag thumb; null = not
 function _tlInit(winStartIso, winEndIso, segs) {
   _tlWinStart  = new Date(winStartIso).getTime();
   _tlWinEnd    = new Date(winEndIso).getTime();
-  _tlSegs      = segs.map(([t, v]) => [t * 1000, v]);
+  // segs: [[wall_epoch_s, video_offset_s, content_dur_s], ...]
+  _tlSegs      = segs.map(s => [s[0] * 1000, s[1], s[2] || 10]);
   _tlSeekBusy  = false;
   _tlDragMs    = null;
   _tlDragging  = false;
@@ -847,13 +868,32 @@ function _tlDraw() {
     }
   }
 
-  // Recording blocks (segments where the gap to the next is ≤ 60 s)
+  // Recording blocks — draw continuous runs of segments as solid blue bars
+  // Merge consecutive segments (gap ≤ 30s wall-clock) into single blocks
+  let blockStart = null, blockEnd = null;
   for (let i = 0; i < _tlSegs.length; i++) {
     const t_ms = _tlSegs[i][0];
-    const next_ms = i + 1 < _tlSegs.length ? _tlSegs[i + 1][0] : t_ms + 12_000;
-    const end_ms  = (next_ms - t_ms) <= 60_000 ? next_ms : t_ms + 12_000;
-    const x1 = (t_ms   - _tlWinStart) / dur * W;
-    const x2 = (end_ms - _tlWinStart) / dur * W;
+    const segDur_ms = (_tlSegs[i][2] || 10) * 1000;
+    const seg_end = t_ms + segDur_ms;
+    if (blockStart === null) {
+      blockStart = t_ms;
+      blockEnd = seg_end;
+    } else if (t_ms - blockEnd <= 30_000) {
+      // Consecutive — extend block
+      blockEnd = seg_end;
+    } else {
+      // Gap — draw previous block, start new one
+      const x1 = (blockStart - _tlWinStart) / dur * W;
+      const x2 = (blockEnd   - _tlWinStart) / dur * W;
+      ctx.fillStyle = '#1d4ed8';
+      ctx.fillRect(Math.floor(x1), 3, Math.max(2, Math.ceil(x2 - x1)), H - 6);
+      blockStart = t_ms;
+      blockEnd = seg_end;
+    }
+  }
+  if (blockStart !== null) {
+    const x1 = (blockStart - _tlWinStart) / dur * W;
+    const x2 = (blockEnd   - _tlWinStart) / dur * W;
     ctx.fillStyle = '#1d4ed8';
     ctx.fillRect(Math.floor(x1), 3, Math.max(2, Math.ceil(x2 - x1)), H - 6);
   }
@@ -894,7 +934,9 @@ function _tlPosFromEvent(e) {
     if (_tlSegs[i][0] <= target_ms) best = _tlSegs[i];
     else break;
   }
-  const intra  = Math.max(0, (target_ms - best[0]) / 1000);
+  // Clamp intra-segment offset to the actual content duration (best[2])
+  const segDur = best[2] || 10;
+  const intra  = Math.min(segDur, Math.max(0, (target_ms - best[0]) / 1000));
   const seekTo = best[1] + intra;
   const video  = document.getElementById('video-player');
   return { target_ms, seekTo, within: !isFinite(video.duration) || seekTo <= video.duration };
@@ -914,10 +956,9 @@ _tlWrap.addEventListener('mousedown', e => {
   if (e.button !== 0 || !_tlSegs.length || _tlSeekBusy) return;
   e.preventDefault();
   _tlDragging = true;
-  const { target_ms, seekTo } = _tlPosFromEvent(e);
+  const { target_ms } = _tlPosFromEvent(e);
   _tlDragMs = target_ms;
-  const video = document.getElementById('video-player');
-  video.currentTime = seekTo;
+  // Don't seek during drag — only update visual thumb position
   _tlShowTip(e, target_ms);
   _tlDraw();
 });
@@ -925,10 +966,9 @@ _tlWrap.addEventListener('mousedown', e => {
 // Drag continues even outside the timeline strip
 document.addEventListener('mousemove', e => {
   if (_tlDragging && _tlSegs.length) {
-    const { target_ms, seekTo } = _tlPosFromEvent(e);
+    const { target_ms } = _tlPosFromEvent(e);
     _tlDragMs = target_ms;
-    const video = document.getElementById('video-player');
-    video.currentTime = seekTo;
+    // Visual update only — no video.currentTime during drag
     _tlShowTip(e, target_ms);
     _tlDraw();
     return;

@@ -18,7 +18,7 @@ services:
     shm_size: "256mb"
     volumes:
       - ./frigate:/config
-      - ${FRIGATE_MEDIA_DIR:-/home/ipcam-frigate-media}:/media/frigate
+      - ${FRIGATE_MEDIA_DIR:-/mnt/ipcam-storage}:/media/frigate
       - /etc/localtime:/etc/localtime:ro
     environment:
       - TZ=${TIMEZONE:-UTC}
@@ -41,7 +41,7 @@ services:
       - CONFIG_PATH=/config/cameras.yml
       - ONVIF_USERNAME=${ONVIF_USERNAME:-admin}
       - ONVIF_PASSWORD=${ONVIF_PASSWORD:-}
-      - CAMERA_SUBNET=${CAMERA_SUBNET:-192.168.100.0/24}
+      - CAMERA_SUBNET=${CAMERA_SUBNET:-192.168.100.0/24,192.168.1.0/24}
       - TZ=${TIMEZONE:-UTC}
     logging:
       driver: "json-file"
@@ -61,51 +61,23 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./config:/config
+      - ./frigate:/frigate-config
       - ./frigate/frigate.db:/config/frigate.db:ro
-      - ${FRIGATE_MEDIA_DIR:-/home/ipcam-frigate-media}/recordings:/recordings:ro
+      - ${FRIGATE_MEDIA_DIR:-/mnt/ipcam-storage}/recordings:/recordings:ro
       - ${EXCERPTS_DIR:-./excerpts}:/excerpts
-      - ${VOD_DIR:-/home/ipcam-vod}:/vod
+      - ${VOD_DIR:-/mnt/ipcam-storage/vod}:/vod
+      - ${CHUNKS_DIR:-/mnt/ipcam-storage/chunks}:/chunks
+      - ./docs:/docs:ro
     environment:
       - RECORDINGS_PATH=/recordings
       - EXCERPTS_PATH=/excerpts
       - VOD_PATH=/vod
+      - CHUNKS_PATH=/chunks
       - CONFIG_PATH=/config/cameras.yml
       - FRIGATE_URL=http://host.docker.internal:5000
-      - DVR_USERNAME=${DVR_USERNAME:-admin}
-      - DVR_PASSWORD=${DVR_PASSWORD:-}
+      - FRIGATE_CONFIG_PATH=/frigate-config/config.yml
+      - DOCS_PATH=/docs
       - TZ=${TIMEZONE:-UTC}
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # ── DVR3 IE-compatibility viewer (Chromium + noVNC, port 6080) ───────────────
-  # TigerSecu DVR3 (192.168.1.253) requires IE / a native app for its WebSocket
-  # stream.  This container runs Chromium with an IE11 user-agent and relaxed
-  # security settings behind a noVNC web interface so it can be opened directly
-  # from the dashboard without leaving the browser.
-  # Access: http://<host>:6080  — no nginx proxy needed (no sub-path issues).
-  dvr3-viewer:
-    image: lscr.io/linuxserver/chromium:latest
-    container_name: ipcam-dvr3-viewer
-    restart: unless-stopped
-    security_opt:
-      - seccomp:unconfined    # required for Chromium sandbox inside Docker
-    shm_size: "512mb"
-    ports:
-      - "6080:3000"           # noVNC web UI on host port 6080
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=${TIMEZONE:-UTC}
-      # IE11 user-agent + relaxed security so DVR pages load without ActiveX errors
-      - CHROME_CLI=--no-sandbox
-          --ignore-certificate-errors
-          --allow-running-insecure-content
-          --disable-web-security
-          --user-agent="Mozilla/5.0 (compatible; MSIE 11.0; Windows NT 10.0; WOW64; Trident/7.0; rv:11.0) like Gecko"
-          https://192.168.1.253
     logging:
       driver: "json-file"
       options:
@@ -121,12 +93,11 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "${HTTP_PORT:-80}:80"
-      - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
       - ${RECORDINGS_DIR:-./recordings}:/recordings:ro
       - ${EXCERPTS_DIR:-./excerpts}:/excerpts:ro
+      - ${VOD_DIR:-/mnt/ipcam-storage/vod}:/vod:ro
     depends_on:
       - dashboard
     logging:

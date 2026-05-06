@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FMS Camera System — User Guide</title>
+  <style>
+    :root {
+      --bg0:#07090d; --bg1:#0d1117; --bg2:#111820; --bg3:#16202d;
+      --border:#1e2d3d; --text1:#e2e8f0; --text2:#8fa3b1; --text3:#4a6070;
+      --blue:#3b82f6; --green:#10b981; --yellow:#f59e0b; --red:#ef4444;
+      --radius:10px;
+    }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg0);color:var(--text1);font-family:'Segoe UI',system-ui,sans-serif;
+         font-size:15px;line-height:1.65;}
+
+    /* ── Page chrome ── */
+    .page-header{
+      background:var(--bg1);border-bottom:1px solid var(--border);
+      padding:28px 40px 24px; position:relative;
+    }
+    .page-header h1{font-size:1.6rem;font-weight:700;margin-bottom:6px;}
+    .page-header p{color:var(--text2);font-size:.9rem;}
+    .back-btn{
+      display:inline-flex;align-items:center;gap:6px;
+      background:var(--bg3);border:1px solid var(--border);
+      color:var(--text2);border-radius:6px;padding:6px 14px;
+      font-size:.82rem;text-decoration:none;cursor:pointer;
+      transition:color .15s,border-color .15s;margin-bottom:16px;
+    }
+    .back-btn:hover{color:var(--text1);border-color:var(--text2);}
+    nav.toc{
+      background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+      padding:20px 28px;margin:32px auto;max-width:880px;
+    }
+    nav.toc h2{font-size:.85rem;text-transform:uppercase;letter-spacing:.1em;
+               color:var(--text3);margin-bottom:12px;}
+    nav.toc ol{padding-left:20px;display:flex;flex-direction:column;gap:6px;}
+    nav.toc a{color:var(--blue);text-decoration:none;font-size:.9rem;}
+    nav.toc a:hover{text-decoration:underline;}
+
+    .content{max-width:880px;margin:0 auto;padding:0 20px 60px;}
+
+    /* ── Sections ── */
+    section{margin-bottom:56px;}
+    section h2{
+      font-size:1.25rem;font-weight:700;padding-bottom:10px;
+      border-bottom:2px solid var(--blue);margin-bottom:24px;
+      display:flex;align-items:center;gap:10px;
+    }
+    section h2 .num{
+      background:var(--blue);color:#fff;border-radius:50%;
+      width:28px;height:28px;display:inline-flex;
+      align-items:center;justify-content:center;
+      font-size:.85rem;font-weight:700;flex-shrink:0;
+    }
+
+    /* ── Steps ── */
+    .steps{display:flex;flex-direction:column;gap:20px;}
+    .step{
+      background:var(--bg2);border:1px solid var(--border);
+      border-radius:var(--radius);padding:20px 24px;
+      display:flex;gap:16px;align-items:flex-start;
+    }
+    .step-num{
+      background:var(--bg3);border:1px solid var(--border);
+      border-radius:50%;width:28px;height:28px;
+      display:flex;align-items:center;justify-content:center;
+      font-size:.8rem;font-weight:700;color:var(--blue);flex-shrink:0;
+    }
+    .step-body{flex:1;}
+    .step-body strong{display:block;margin-bottom:4px;font-size:.95rem;}
+    .step-body p,.step-body li{color:var(--text2);font-size:.88rem;}
+    .step-body ul,.step-body ol{padding-left:18px;display:flex;flex-direction:column;gap:4px;margin-top:6px;}
+
+    /* ── Screenshot / diagram frames ── */
+    .shot-wrap{
+      background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius);
+      overflow:hidden;margin:18px 0;
+    }
+    .shot-caption{
+      background:var(--bg3);border-top:1px solid var(--border);
+      padding:8px 14px;font-size:.78rem;color:var(--text2);
+    }
+    .shot-wrap img{width:100%;display:block;}
+
+    /* ── Inline UI diagrams (SVG) used when no real screenshot exists ── */
+    .diagram{width:100%;display:block;}
+
+    /* ── Tip / note boxes ── */
+    .tip{
+      background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.3);
+      border-radius:8px;padding:12px 16px;margin:14px 0;
+      font-size:.85rem;color:var(--text2);
+    }
+    .tip strong{color:var(--blue);}
+    .note{
+      background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);
+      border-radius:8px;padding:12px 16px;margin:14px 0;
+      font-size:.85rem;color:var(--text2);
+    }
+    .note strong{color:var(--yellow);}
+
+    /* ── Pill labels ── */
+    .btn-pill{
+      display:inline-flex;align-items:center;gap:4px;
+      background:var(--bg3);border:1px solid var(--border);
+      border-radius:5px;padding:2px 10px;font-size:.8rem;
+      color:var(--text1);vertical-align:middle;
+    }
+    .btn-pill.blue{background:rgba(59,130,246,.15);border-color:rgba(59,130,246,.5);color:var(--blue);}
+    .btn-pill.green{background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.4);color:var(--green);}
+
+    /* ── Quick-ref table ── */
+    table{width:100%;border-collapse:collapse;font-size:.85rem;}
+    th,td{padding:9px 14px;text-align:left;border-bottom:1px solid var(--border);}
+    th{background:var(--bg3);color:var(--text2);font-weight:600;
+       text-transform:uppercase;letter-spacing:.05em;font-size:.75rem;}
+    tbody tr:hover{background:var(--bg3);}
+    tbody tr:last-child td{border-bottom:none;}
+
+    @media(max-width:600px){
+      .page-header{padding:20px;}
+      .step{flex-direction:column;}
+    }
+  </style>
+</head>
+<body>
+
+<div class="page-header">
+  <button class="back-btn" onclick="window.close()">&#10005; Close</button>
+  <h1>📷 FMS Camera System — User Guide</h1>
+  <p>Quick reference for viewing live feeds, recordings, and multi-camera grids.</p>
+</div>
+
+<div class="content">
+
+  <nav class="toc">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#sign-in">Signing In</a></li>
+      <li><a href="#dashboard">The Dashboard</a></li>
+      <li><a href="#live">Viewing a Live Feed</a></li>
+      <li><a href="#recordings">Viewing Recordings</a></li>
+      <li><a href="#multi">Watching Multiple Cameras at Once</a></li>
+      <li><a href="#select">Selecting Specific Cameras for Multi-View</a></li>
+      <li><a href="#tips">Tips &amp; Shortcuts</a></li>
+    </ol>
+  </nav>
+
+  <!-- ═══════════════ 1. SIGN IN ═══════════════════════════════════════════ -->
+  <section id="sign-in">
+    <h2><span class="num">1</span> Signing In</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Open the dashboard</strong>
+          <p>In your browser go to <code>http://192.168.1.61</code>.
+             You will be redirected to the login page.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Enter your credentials</strong>
+          <p>Type your <em>Username</em> and <em>Password</em>, then click <span class="btn-pill blue">Sign in</span>.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>First-time login? Change your password</strong>
+          <p>New accounts require a password change on first use. You will be prompted automatically — enter a new password (minimum 8 characters) and click <span class="btn-pill blue">Set password &amp; continue</span>.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="shot-wrap" id="shot-login">
+      <img src="screenshots/01_login.png" onerror="this.parentElement.querySelector('.fallback').style.display='block';this.style.display='none'">
+      <svg class="fallback diagram" viewBox="0 0 640 360" style="display:none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="640" height="360" fill="#07090d"/>
+        <rect x="200" y="60" width="240" height="240" rx="8" fill="#111820" stroke="#1e2d3d" stroke-width="1"/>
+        <text x="320" y="96" text-anchor="middle" fill="#e2e8f0" font-size="14" font-weight="bold" font-family="Segoe UI,sans-serif">FMS Camera System</text>
+        <text x="320" y="114" text-anchor="middle" fill="#4a6070" font-size="11" font-family="Segoe UI,sans-serif">Sign in to continue</text>
+        <rect x="216" y="130" width="208" height="28" rx="5" fill="#16202d" stroke="#1e2d3d"/>
+        <text x="226" y="149" fill="#8fa3b1" font-size="11" font-family="Segoe UI,sans-serif">Username</text>
+        <rect x="216" y="172" width="208" height="28" rx="5" fill="#16202d" stroke="#1e2d3d"/>
+        <text x="226" y="191" fill="#8fa3b1" font-size="11" font-family="Segoe UI,sans-serif">Password</text>
+        <rect x="216" y="215" width="208" height="32" rx="5" fill="#3b82f6"/>
+        <text x="320" y="236" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold" font-family="Segoe UI,sans-serif">Sign in</text>
+      </svg>
+      <div class="shot-caption">Login page at http://192.168.1.61/login</div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 2. DASHBOARD ══════════════════════════════════════════ -->
+  <section id="dashboard">
+    <h2><span class="num">2</span> The Dashboard</h2>
+    <p style="color:var(--text2);margin-bottom:18px;font-size:.9rem;">
+      After signing in you land on the main camera dashboard. Cameras are grouped by
+      <strong style="color:var(--text1)">Building / Category</strong> and
+      <strong style="color:var(--text1)">Area / Sub-category</strong>.
+    </p>
+    <div class="shot-wrap">
+      <img src="screenshots/02_dashboard.png" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <svg class="fallback diagram" viewBox="0 0 900 500" style="display:none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="900" height="500" fill="#07090d"/>
+        <!-- header -->
+        <rect width="900" height="60" fill="#0d1117" stroke="#1e2d3d" stroke-width="1"/>
+        <circle cx="32" cy="30" r="14" fill="#3b82f6"/>
+        <text x="56" y="26" fill="#e2e8f0" font-size="13" font-weight="bold" font-family="Segoe UI,sans-serif">FMS Camera System</text>
+        <text x="56" y="42" fill="#4a6070" font-size="10" font-family="Segoe UI,sans-serif">192.168.100.0/24</text>
+        <rect x="620" y="16" width="100" height="28" rx="6" fill="#111820" stroke="#1e2d3d"/>
+        <text x="670" y="34" text-anchor="middle" fill="#e2e8f0" font-size="11" font-family="Segoe UI,sans-serif">📼 Recordings</text>
+        <text x="744" y="34" fill="#8fa3b1" font-size="11" font-family="Segoe UI,sans-serif">14:33:52</text>
+        <rect x="780" y="16" width="110" height="28" rx="6" fill="#111820" stroke="#1e2d3d"/>
+        <text x="835" y="30" text-anchor="middle" fill="#8fa3b1" font-size="10" font-family="Segoe UI,sans-serif">Storage  1.2/5 TB</text>
+        <!-- category -->
+        <text x="20" y="94" fill="#8fa3b1" font-size="10" font-weight="bold" font-family="Segoe UI,sans-serif" letter-spacing="1">BUILDING 1</text>
+        <rect x="18" y="100" width="862" height="1" fill="#1e2d3d"/>
+        <!-- cards row 1 -->
+        <rect x="18" y="112" width="180" height="100" rx="8" fill="#111820" stroke="#10b981" stroke-width="2"/>
+        <text x="30" y="133" fill="#e2e8f0" font-size="12" font-weight="bold" font-family="Segoe UI,sans-serif">Front_Entrance</text>
+        <text x="30" y="148" fill="#8fa3b1" font-size="10" font-family="Segoe UI,sans-serif">192.168.100.10</text>
+        <circle cx="185" cy="126" r="5" fill="#10b981"/>
+        <text x="30" y="168" fill="#10b981" font-size="10" font-family="Segoe UI,sans-serif">Recording</text>
+        <rect x="30" y="182" width="70" height="20" rx="4" fill="#1e3a5f" stroke="#3b82f6"/>
+        <text x="65" y="196" text-anchor="middle" fill="#3b82f6" font-size="10" font-family="Segoe UI,sans-serif">▶ Live</text>
+        <rect x="108" y="182" width="30" height="20" rx="4" fill="#16202d" stroke="#1e2d3d"/>
+        <text x="123" y="196" text-anchor="middle" fill="#8fa3b1" font-size="12" font-family="Segoe UI,sans-serif">📼</text>
+
+        <rect x="210" y="112" width="180" height="100" rx="8" fill="#111820" stroke="#1e2d3d"/>
+        <text x="222" y="133" fill="#e2e8f0" font-size="12" font-weight="bold" font-family="Segoe UI,sans-serif">Side_Door</text>
+        <text x="222" y="148" fill="#8fa3b1" font-size="10" font-family="Segoe UI,sans-serif">192.168.100.12</text>
+        <circle cx="377" cy="126" r="5" fill="#10b981"/>
+        <text x="222" y="168" fill="#10b981" font-size="10" font-family="Segoe UI,sans-serif">Recording</text>
+        <rect x="222" y="182" width="70" height="20" rx="4" fill="#1e3a5f" stroke="#3b82f6"/>
+        <text x="257" y="196" text-anchor="middle" fill="#3b82f6" font-size="10" font-family="Segoe UI,sans-serif">▶ Live</text>
+        <rect x="300" y="182" width="30" height="20" rx="4" fill="#16202d" stroke="#1e2d3d"/>
+        <text x="315" y="196" text-anchor="middle" fill="#8fa3b1" font-size="12" font-family="Segoe UI,sans-serif">📼</text>
+
+        <rect x="402" y="112" width="180" height="100" rx="8" fill="#111820" stroke="#ef4444" stroke-width="2"/>
+        <text x="414" y="133" fill="#e2e8f0" font-size="12" font-weight="bold" font-family="Segoe UI,sans-serif">Parking_Lot</text>
+        <text x="414" y="148" fill="#8fa3b1" font-size="10" font-family="Segoe UI,sans-serif">192.168.100.15</text>
+        <circle cx="569" cy="126" r="5" fill="#ef4444"/>
+        <text x="414" y="168" fill="#ef4444" font-size="10" font-family="Segoe UI,sans-serif">Offline</text>
+        <rect x="414" y="182" width="70" height="20" rx="4" fill="#1e3a5f" stroke="#3b82f6"/>
+        <text x="449" y="196" text-anchor="middle" fill="#3b82f6" font-size="10" font-family="Segoe UI,sans-serif">▶ Live</text>
+
+        <!-- Watch button on cat header -->
+        <rect x="760" y="80" width="80" height="22" rx="4" fill="#16202d" stroke="#1e2d3d"/>
+        <text x="800" y="95" text-anchor="middle" fill="#4a6070" font-size="10" font-family="Segoe UI,sans-serif">⊞ Watch</text>
+        <!-- arrow annotation -->
+        <line x1="800" y1="73" x2="800" y2="64" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="800" y="58" text-anchor="middle" fill="#f59e0b" font-size="10" font-family="Segoe UI,sans-serif">Watch all in category</text>
+        <defs>
+          <marker id="arr" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#f59e0b"/>
+          </marker>
+        </defs>
+      </svg>
+      <div class="shot-caption">Main dashboard — cameras organised by building and area</div>
+    </div>
+
+    <div class="tip"><strong>Tip:</strong> Click a category or sub-category header to collapse or expand that group. Your collapse state is remembered across sessions.</div>
+  </section>
+
+  <!-- ═══════════════ 3. LIVE FEED ══════════════════════════════════════════ -->
+  <section id="live">
+    <h2><span class="num">3</span> Viewing a Live Feed</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Find the camera card</strong>
+          <p>Scroll to the building/area you need, then locate the camera card. A green dot and "Recording" label means the camera is active.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Click <span class="btn-pill blue">▶ Live</span></strong>
+          <p>The live stream opens in a full-screen-style overlay. Video plays automatically.</p>
+          <ul>
+            <li><strong>Right-click the video</strong> to zoom in (2×, 3×, or 4×).</li>
+            <li>While zoomed in you can <strong>click and drag</strong> to pan around the image.</li>
+            <li>Press <kbd>Escape</kbd> or click <strong>×</strong> to close.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="shot-wrap">
+      <img src="screenshots/08_live_view.png" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <svg class="fallback diagram" viewBox="0 0 880 480" style="display:none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="880" height="480" fill="rgba(0,0,0,.75)"/>
+        <rect x="80" y="40" width="720" height="400" rx="8" fill="#000" stroke="#1e2d3d"/>
+        <!-- header bar -->
+        <rect x="80" y="40" width="720" height="40" rx="0" fill="#0d1117"/>
+        <text x="98" y="64" fill="#e2e8f0" font-size="13" font-weight="bold" font-family="Segoe UI,sans-serif">Front_Entrance — Live</text>
+        <text x="756" y="64" fill="#8fa3b1" font-size="18" font-family="Segoe UI,sans-serif" cursor="pointer">×</text>
+        <!-- fake video -->
+        <rect x="80" y="80" width="720" height="300" fill="#0a0a14"/>
+        <text x="440" y="236" text-anchor="middle" fill="#1e2d3d" font-size="16" font-family="Segoe UI,sans-serif">[ Live stream ]</text>
+        <!-- controls bar -->
+        <rect x="80" y="380" width="720" height="60" fill="#0d1117" stroke-top="#1e2d3d"/>
+        <rect x="98" y="395" width="30" height="28" rx="4" fill="#16202d" stroke="#1e2d3d"/>
+        <text x="113" y="414" text-anchor="middle" fill="#e2e8f0" font-size="11" font-family="Segoe UI,sans-serif">🔴</text>
+        <text x="138" y="414" fill="#8fa3b1" font-size="11" font-family="Segoe UI,sans-serif">LIVE</text>
+        <rect x="186" y="393" width="80" height="28" rx="4" fill="#16202d" stroke="#ef4444"/>
+        <text x="226" y="412" text-anchor="middle" fill="#ef4444" font-size="11" font-family="Segoe UI,sans-serif">⏺ Record</text>
+      </svg>
+      <div class="shot-caption">Live view modal — right-click the video to zoom; drag to pan</div>
+    </div>
+
+    <div class="note"><strong>Note:</strong> Live streams use the go2rtc MP4 endpoint and require HEVC-capable browser (Chrome 107+, Edge, Safari). If the stream shows an error the camera may be offline.</div>
+  </section>
+
+  <!-- ═══════════════ 4. RECORDINGS ══════════════════════════════════════════ -->
+  <section id="recordings">
+    <h2><span class="num">4</span> Viewing Recordings</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Open Recordings</strong>
+          <p>Click <span class="btn-pill">📼 Recordings</span> in the top-right header, or click the <span class="btn-pill">📼</span> icon on any camera card to jump directly to that camera's recordings.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Pick a camera and date</strong>
+          <p>Use the <em>Camera</em> drop-down and <em>Date</em> picker to filter recordings. The list shows all segments for that day.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Play a recording</strong>
+          <p>Click <span class="btn-pill blue">▶ Play</span> next to any segment. The video opens with playback controls:</p>
+          <ul>
+            <li><span class="btn-pill">-30s / -10s / +10s / +30s</span> — skip backwards or forwards.</li>
+            <li><span class="btn-pill">1×</span> — cycle through ½×, 1×, 2×, 4× speeds.</li>
+            <li><span class="btn-pill">Jump</span> — type an absolute time (e.g. <code>14:22</code>) to seek instantly.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>Save an excerpt (optional)</strong>
+          <p>While playing a recording, click <span class="btn-pill">✂ Excerpt</span> to save a clip to the excerpts library for later review or export.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="shot-wrap">
+      <img src="screenshots/09_recordings.png" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <svg class="fallback diagram" viewBox="0 0 880 380" style="display:none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="880" height="380" fill="#07090d"/>
+        <rect width="880" height="60" fill="#0d1117" stroke="#1e2d3d" stroke-width="1"/>
+        <text x="20" y="35" fill="#e2e8f0" font-size="13" font-weight="bold" font-family="Segoe UI,sans-serif">📼 Recordings</text>
+        <!-- filters -->
+        <rect x="20" y="76" width="840" height="48" rx="8" fill="#111820" stroke="#1e2d3d"/>
+        <rect x="32" y="88" width="160" height="24" rx="4" fill="#16202d" stroke="#1e2d3d"/>
+        <text x="45" y="104" fill="#8fa3b1" font-size="10" font-family="Segoe UI,sans-serif">Camera ▾</text>
+        <rect x="204" y="88" width="140" height="24" rx="4" fill="#16202d" stroke="#1e2d3d"/>
+        <text x="216" y="104" fill="#8fa3b1" font-size="10" font-family="Segoe UI,sans-serif">Date  2025-04-16</text>
+        <!-- table -->
+        <rect x="20" y="136" width="840" height="220" rx="8" fill="#111820" stroke="#1e2d3d"/>
+        <rect x="20" y="136" width="840" height="32" rx="0" fill="#16202d"/>
+        <text x="36" y="157" fill="#8fa3b1" font-size="10" font-weight="bold" font-family="Segoe UI,sans-serif">TIME</text>
+        <text x="160" y="157" fill="#8fa3b1" font-size="10" font-weight="bold" font-family="Segoe UI,sans-serif">DURATION</text>
+        <text x="280" y="157" fill="#8fa3b1" font-size="10" font-weight="bold" font-family="Segoe UI,sans-serif">SIZE</text>
+        <text x="780" y="157" fill="#8fa3b1" font-size="10" font-weight="bold" font-family="Segoe UI,sans-serif">ACTION</text>
+        <!-- rows -->
+        <line x1="20" y1="168" x2="860" y2="168" stroke="#1e2d3d"/>
+        <text x="36" y="186" fill="#e2e8f0" font-size="11" font-family="Segoe UI,sans-serif">08:00:00</text>
+        <text x="160" y="186" fill="#8fa3b1" font-size="11" font-family="Segoe UI,sans-serif">10 min</text>
+        <text x="280" y="186" fill="#8fa3b1" font-size="11" font-family="Segoe UI,sans-serif">420 MB</text>
+        <rect x="760" y="174" width="52" height="22" rx="4" fill="#1e3a5f" stroke="#3b82f6"/>
+        <text x="786" y="189" text-anchor="middle" fill="#3b82f6" font-size="10" font-family="Segoe UI,sans-serif">▶ Play</text>
+        <line x1="20" y1="202" x2="860" y2="202" stroke="#1e2d3d"/>
+        <text x="36" y="220" fill="#e2e8f0" font-size="11" font-family="Segoe UI,sans-serif">08:10:00</text>
+        <text x="160" y="220" fill="#8fa3b1" font-size="11" font-family="Segoe UI,sans-serif">10 min</text>
+        <text x="280" y="220" fill="#8fa3b1" font-size="11" font-family="Segoe UI,sans-serif">418 MB</text>
+        <rect x="760" y="208" width="52" height="22" rx="4" fill="#1e3a5f" stroke="#3b82f6"/>
+        <text x="786" y="223" text-anchor="middle" fill="#3b82f6" font-size="10" font-family="Segoe UI,sans-serif">▶ Play</text>
+      </svg>
+      <div class="shot-caption">Recordings page — filter by camera and date, then play any segment</div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 5. MULTI-CAMERA (WATCH BUTTON) ════════════════════════ -->
+  <section id="multi">
+    <h2><span class="num">5</span> Watching Multiple Cameras at Once</h2>
+    <p style="color:var(--text2);margin-bottom:18px;font-size:.9rem;">
+      The <strong style="color:var(--text1)">⊞ Watch</strong> button on every category or sub-category header opens all cameras in that group as a live grid.
+    </p>
+
+    <div class="shot-wrap">
+      <img src="screenshots/06_watch_buttons.png" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <svg class="fallback diagram" viewBox="0 0 860 90" style="display:none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="860" height="90" fill="#07090d"/>
+        <!-- cat header -->
+        <text x="30" y="30" fill="#8fa3b1" font-size="11" font-weight="bold" font-family="Segoe UI,sans-serif" letter-spacing="1">▾  BUILDING 1</text>
+        <rect x="36" y="36" width="818" height="1" fill="#1e2d3d"/>
+        <rect x="680" y="14" width="80" height="22" rx="4" fill="#16202d" stroke="#1e2d3d"/>
+        <text x="720" y="29" text-anchor="middle" fill="#4a6070" font-size="11" font-family="Segoe UI,sans-serif">⊞ Watch</text>
+        <!-- annotation -->
+        <line x1="720" y1="8" x2="720" y2="0" stroke="#f59e0b" stroke-width="1.5"/>
+        <text x="720" y="-4" text-anchor="middle" fill="#f59e0b" font-size="9" font-family="Segoe UI,sans-serif">Click to watch all cameras in Building 1</text>
+        <!-- sub-cat header -->
+        <text x="48" y="66" fill="#8fa3b1" font-size="10" font-weight="600" font-family="Segoe UI,sans-serif">▾  Exterior  (4)</text>
+        <rect x="680" y="54" width="80" height="22" rx="4" fill="#16202d" stroke="#1e2d3d"/>
+        <text x="720" y="69" text-anchor="middle" fill="#4a6070" font-size="11" font-family="Segoe UI,sans-serif">⊞ Watch</text>
+      </svg>
+      <div class="shot-caption">⊞ Watch button appears on category and sub-category headers</div>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Click <span class="btn-pill">⊞ Watch</span> on a category or sub-category header</strong>
+          <p>All streaming cameras in that group open in a tiled grid view. The grid automatically picks the best column layout.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Expand a single camera</strong>
+          <p><strong>Double-click</strong> any tile to expand it full-screen. Double-click again (or click <span class="btn-pill">← Back to Grid</span>) to return to the grid.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Right-click options</strong>
+          <p>Right-click any tile to choose:</p>
+          <ul>
+            <li><strong>⛶ Focus / Expand</strong> — same as double-click.</li>
+            <li><strong>↗ Open in Single View</strong> — close the grid and open that camera in the regular single-camera player.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>Close the grid</strong>
+          <p>Click <strong>✕</strong> in the top-right corner, or press <kbd>Escape</kbd>.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="shot-wrap">
+      <img src="screenshots/07_grid_view.png" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <svg class="fallback diagram" viewBox="0 0 880 500" style="display:none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="880" height="500" fill="#000"/>
+        <!-- header -->
+        <rect width="880" height="44" fill="#0d1117" stroke="#1e2d3d" stroke-width="1"/>
+        <text x="16" y="27" fill="#e2e8f0" font-size="13" font-weight="bold" font-family="Segoe UI,sans-serif">Building 1</text>
+        <text x="840" y="27" fill="#8fa3b1" font-size="18" font-family="Segoe UI,sans-serif">✕</text>
+        <!-- 2x2 grid -->
+        <rect x="1" y="45" width="438" height="226" fill="#0a0a14" stroke="#111"/>
+        <text x="220" y="165" text-anchor="middle" fill="#1e2d3d" font-size="12" font-family="Segoe UI,sans-serif">Front_Entrance</text>
+        <text x="4" y="265" fill="#fff" font-size="10" font-family="Segoe UI,sans-serif">Front_Entrance</text>
+
+        <rect x="441" y="45" width="438" height="226" fill="#0a0a14" stroke="#111"/>
+        <text x="660" y="165" text-anchor="middle" fill="#1e2d3d" font-size="12" font-family="Segoe UI,sans-serif">Side_Door</text>
+        <text x="444" y="265" fill="#fff" font-size="10" font-family="Segoe UI,sans-serif">Side_Door</text>
+
+        <rect x="1" y="273" width="438" height="226" fill="#0a0a14" stroke="#111"/>
+        <text x="220" y="393" text-anchor="middle" fill="#1e2d3d" font-size="12" font-family="Segoe UI,sans-serif">Parking_Lot</text>
+        <text x="4" y="493" fill="#fff" font-size="10" font-family="Segoe UI,sans-serif">Parking_Lot</text>
+
+        <rect x="441" y="273" width="438" height="226" fill="#0a0a14" stroke="#111"/>
+        <text x="660" y="393" text-anchor="middle" fill="#1e2d3d" font-size="12" font-family="Segoe UI,sans-serif">DBP2_Unwinder</text>
+        <text x="444" y="493" fill="#fff" font-size="10" font-family="Segoe UI,sans-serif">DBP2_Unwinder</text>
+
+        <!-- double-click hint -->
+        <rect x="300" y="110" width="170" height="28" rx="6" fill="rgba(59,130,246,.3)" stroke="#3b82f6"/>
+        <text x="385" y="129" text-anchor="middle" fill="#e2e8f0" font-size="10" font-family="Segoe UI,sans-serif">Double-click to expand</text>
+      </svg>
+      <div class="shot-caption">Camera grid view — live streams from every camera in the group</div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 6. SELECT CAMERAS ════════════════════════════════════ -->
+  <section id="select">
+    <h2><span class="num">6</span> Selecting Specific Cameras for Multi-View</h2>
+    <p style="color:var(--text2);margin-bottom:18px;font-size:.9rem;">
+      Use the checkbox on individual camera cards to hand-pick exactly which cameras you want to watch together — even across different buildings or areas.
+    </p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Hover over a camera card to reveal its checkbox</strong>
+          <p>A small checkbox appears in the top-left corner of the card when you hover over it. Click it to select that camera.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Select as many cameras as you need</strong>
+          <p>Selected cameras get a blue border. You can select cameras from different buildings and areas freely.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Click <span class="btn-pill blue">⊞ Watch Selected</span> in the bar at the bottom</strong>
+          <p>A floating bar appears at the bottom of the screen showing how many cameras are selected. Click <em>Watch Selected</em> to open the grid with just those cameras.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>Clear the selection</strong>
+          <p>Click <span class="btn-pill">✕ Clear</span> in the bar, or simply uncheck each camera. The selection bar hides automatically when nothing is selected.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="shot-wrap">
+      <img src="screenshots/04_camera_selected.png" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <svg class="fallback diagram" viewBox="0 0 260 130" style="display:none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="260" height="130" fill="#07090d"/>
+        <rect x="10" y="10" width="180" height="110" rx="8" fill="#111820" stroke="#3b82f6" stroke-width="2"/>
+        <rect x="10" y="10" width="180" height="110" rx="8" fill="none" stroke="#3b82f6" stroke-width="2"
+              style="box-shadow:0 0 0 4px rgba(59,130,246,.35)"/>
+        <!-- checkbox -->
+        <rect x="18" y="18" width="16" height="16" rx="3" fill="#3b82f6"/>
+        <text x="26" y="30" text-anchor="middle" fill="#fff" font-size="12" font-family="Segoe UI,sans-serif">✓</text>
+        <!-- card content -->
+        <text x="44" y="32" fill="#e2e8f0" font-size="11" font-weight="bold" font-family="Segoe UI,sans-serif">Front_Entrance</text>
+        <circle cx="177" cy="26" r="5" fill="#10b981"/>
+        <text x="22" y="52" fill="#8fa3b1" font-size="9" font-family="Segoe UI,sans-serif">192.168.100.10</text>
+        <text x="22" y="68" fill="#10b981" font-size="9" font-family="Segoe UI,sans-serif">Recording</text>
+        <rect x="22" y="80" width="62" height="20" rx="4" fill="#1e3a5f" stroke="#3b82f6"/>
+        <text x="53" y="94" text-anchor="middle" fill="#3b82f6" font-size="9" font-family="Segoe UI,sans-serif">▶ Live</text>
+        <rect x="92" y="80" width="28" height="20" rx="4" fill="#16202d" stroke="#1e2d3d"/>
+        <text x="106" y="94" text-anchor="middle" fill="#8fa3b1" font-size="11" font-family="Segoe UI,sans-serif">📼</text>
+        <!-- annotation -->
+        <line x1="34" y1="34" x2="60" y2="46" stroke="#f59e0b" stroke-width="1" stroke-dasharray="3"/>
+        <text x="150" y="118" text-anchor="middle" fill="#f59e0b" font-size="9" font-family="Segoe UI,sans-serif">Hover to show checkbox</text>
+      </svg>
+      <div class="shot-caption">Hovering reveals the selection checkbox — selected card gets a blue border</div>
+    </div>
+
+    <div class="shot-wrap">
+      <img src="screenshots/05_selection_bar.png" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <svg class="fallback diagram" viewBox="0 0 700 80" style="display:none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="700" height="80" fill="#07090d"/>
+        <!-- sel bar -->
+        <rect x="140" y="16" width="420" height="48" rx="10" fill="#111820" stroke="#3b82f6" stroke-width="1"/>
+        <text x="175" y="44" fill="#8fa3b1" font-size="12" font-family="Segoe UI,sans-serif"><tspan fill="#e2e8f0" font-weight="bold">3</tspan> camera(s) selected</text>
+        <rect x="320" y="28" width="130" height="28" rx="6" fill="#3b82f6"/>
+        <text x="385" y="46" text-anchor="middle" fill="#fff" font-size="11" font-weight="bold" font-family="Segoe UI,sans-serif">⊞ Watch Selected</text>
+        <rect x="464" y="27" width="76" height="26" rx="6" fill="none" stroke="#1e2d3d"/>
+        <text x="502" y="44" text-anchor="middle" fill="#8fa3b1" font-size="11" font-family="Segoe UI,sans-serif">✕ Clear</text>
+      </svg>
+      <div class="shot-caption">Selection bar — appears at the bottom of the screen when cameras are selected</div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 7. TIPS ════════════════════════════════════════════════ -->
+  <section id="tips">
+    <h2><span class="num">7</span> Tips &amp; Shortcuts</h2>
+    <table>
+      <thead>
+        <tr><th>Action</th><th>How</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Open live feed</td><td>Click <span class="btn-pill blue">▶ Live</span> on any camera card</td></tr>
+        <tr><td>Watch all cameras in a group</td><td>Click <span class="btn-pill">⊞ Watch</span> on the category or sub-category header</td></tr>
+        <tr><td>Select specific cameras for multi-view</td><td>Hover card → check checkbox → click <span class="btn-pill blue">⊞ Watch Selected</span></td></tr>
+        <tr><td>Expand one camera in grid view</td><td>Double-click the tile</td></tr>
+        <tr><td>Return to grid from expanded tile</td><td>Double-click again, or click <span class="btn-pill">← Back to Grid</span></td></tr>
+        <tr><td>Zoom in on live/VOD video</td><td>Right-click the video → choose zoom level</td></tr>
+        <tr><td>Pan while zoomed in</td><td>Click and drag the video</td></tr>
+        <tr><td>Jump to a time in a recording</td><td>Type <code>HH:MM</code> in the Jump field and press Enter or click Jump</td></tr>
+        <tr><td>Close any popup / modal</td><td><kbd>Escape</kbd> key, or click <strong>×</strong></td></tr>
+        <tr><td>View recordings for one camera</td><td>Click the <span class="btn-pill">📼</span> icon on the camera card</td></tr>
+        <tr><td>Collapse/expand a building section</td><td>Click the section header</td></tr>
+        <tr><td>Sign out</td><td>Click <span class="btn-pill">Sign out</span> in the top-right header</td></tr>
+      </tbody>
+    </table>
+
+    <div class="tip" style="margin-top:20px">
+      <strong>Tip:</strong> Bookmark <code>http://192.168.1.61</code> so it's always one click away.
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

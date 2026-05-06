@@ -298,6 +298,49 @@
       text-transform: uppercase; letter-spacing: .06em;
     }
 
+    /* ── Pending cameras ─────────────────────────────────────────────── */
+    .pending-wrap {
+      margin-bottom: 20px;
+      background: var(--bg2); border: 1px solid rgba(245,158,11,.35);
+      border-radius: var(--radius); padding: 14px 16px;
+    }
+    .pending-header {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+    }
+    .pending-title {
+      font-size: .75rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .07em; color: var(--yellow); flex: 1;
+    }
+    .pending-badge {
+      background: var(--yellow); color: #000; border-radius: 99px;
+      font-size: .68rem; font-weight: 700; padding: 1px 7px;
+    }
+    .pending-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pending-chip {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--bg3); border: 1px solid rgba(245,158,11,.4);
+      border-radius: 6px; padding: 6px 12px; font-size: .82rem;
+    }
+    .pending-chip-ip { font-family: monospace; font-weight: 600; color: var(--yellow); }
+    .pending-chip-name { color: var(--text2); font-size: .75rem; }
+
+    /* ── Pending configure modal ─────────────────────────────────────── */
+    .pending-modal {
+      background: var(--bg1); border: 1px solid var(--border);
+      border-radius: var(--radius); width: min(520px, 100%);
+      display: flex; flex-direction: column;
+    }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .field-group { display: flex; flex-direction: column; gap: 4px; }
+    .field-label { font-size: .75rem; color: var(--text2); }
+    .field-input {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text1); padding: 8px 10px;
+      font-size: .85rem; outline: none; width: 100%;
+    }
+    .field-input:focus { border-color: var(--blue); }
+    .field-input.mono { font-family: monospace; }
+
     /* Inline add inputs */
     .org-add-row { display: flex; gap: 6px; margin-top: 4px; }
     .org-add-input {
@@ -323,13 +366,34 @@
   <h1>Camera Admin</h1>
   <div class="header-right">
     <button class="btn-sm" id="scan-btn" onclick="triggerScan()">⟳ Scan for cameras</button>
-    <a href="/">← Dashboard</a>
+    <button class="btn-sm" id="sync-all-btn" onclick="syncAllClocks()">⏱ Sync All Clocks</button>
+    <a href="/">← Camera Dashboard</a>
     <span class="user-chip">{{ username }}</span>
     <form method="post" action="/admin/logout">
       <button type="submit" class="btn-signout">Sign out</button>
     </form>
   </div>
 </header>
+
+<!-- Pending cameras -->
+<div id="pending-wrap" style="display:none;" class="pending-wrap">
+  <div class="pending-header">
+    <span class="pending-title">⚠ Pending Cameras — awaiting configuration</span>
+    <span class="pending-badge" id="pending-count">0</span>
+  </div>
+  <div class="pending-chips" id="pending-chips"></div>
+</div>
+
+<!-- Manual add by IP -->
+<div class="pending-wrap" style="margin-bottom:14px;">
+  <div class="pending-header">
+    <span class="pending-title">Add Camera by IP</span>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+    <input id="manual-cam-ip" type="text" placeholder="192.168.100.x" style="background:var(--bg3);border:1px solid var(--border);color:var(--text1);padding:6px 10px;border-radius:6px;font-size:.85rem;width:180px;">
+    <button class="btn-xs primary" onclick="manualAddCamera()">+ Add</button>
+  </div>
+</div>
 
 <!-- Category organizer -->
 <div class="org-wrap">
@@ -353,7 +417,7 @@
   <div class="ctx-item" onclick="ctxLive()">▶ Live View</div>
   <div class="ctx-item" id="ctx-rec-btn" onclick="ctxRec()">📼 Recordings</div>
   <div class="ctx-divider"></div>
-  <div class="ctx-item" id="ctx-vis-btn" onclick="ctxToggleVisible()">👁 Show on Dashboard</div>
+  <div class="ctx-item" id="ctx-vis-btn" onclick="ctxToggleVisible()">👁 Show on Camera Dashboard</div>
   <div class="ctx-item" onclick="ctxEdit()">✎ Edit</div>
   <div class="ctx-divider"></div>
   <div class="ctx-item danger" id="ctx-del-btn" onclick="ctxDeleteRec()">🗑 Delete Recordings</div>
@@ -400,10 +464,78 @@
           <input type="number" id="edit-segment" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text1);padding:8px 10px;font-size:.85rem;outline:none;">
         </div>
       </div>
+      <div>
+        <div class="watch-label">Camera visibility (who can view)</div>
+        <div id="edit-roles-wrap" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;">
+          <!-- checkboxes rendered by JS -->
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:10px;">
+        <div class="watch-label" style="margin-bottom:6px;">Camera Clock</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span id="edit-cam-time" style="font-family:monospace;font-size:.82rem;color:var(--text2);">—</span>
+          <button class="btn-xs" id="edit-time-fetch-btn" onclick="fetchCameraTime()">↻ Read</button>
+          <button class="btn-xs primary" id="edit-time-sync-btn" onclick="syncCameraTime()">⏱ Sync to PC</button>
+        </div>
+        <div id="edit-time-msg" style="font-size:.75rem;margin-top:4px;display:none;"></div>
+      </div>
     </div>
     <div class="watch-footer">
       <button class="btn-sm" onclick="closeModal('edit-modal')">Cancel</button>
       <button class="btn-sm primary" id="edit-save-btn" onclick="saveEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Pending configure modal -->
+<div class="modal-backdrop" id="pending-modal">
+  <div class="pending-modal">
+    <div class="modal-header">
+      <h2>Configure New Camera</h2>
+      <button class="modal-close" onclick="closeModal('pending-modal')">✕</button>
+    </div>
+    <div class="watch-body" style="display:flex;flex-direction:column;gap:12px;">
+      <input type="hidden" id="pending-current-ip">
+      <input type="hidden" id="pending-onvif-port">
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:.8rem;color:var(--text2);">
+        Discovered at <span id="pending-discovered-ip" style="font-family:monospace;color:var(--yellow);"></span>
+        <span id="pending-device-name" style="margin-left:8px;color:var(--text3);"></span>
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <div class="field-label">Camera name</div>
+          <input type="text" id="pending-name" class="field-input" placeholder="e.g. DBP2_Unwinder">
+        </div>
+        <div class="field-group">
+          <div class="field-label">Static IP to assign</div>
+          <input type="text" id="pending-static-ip" class="field-input mono" placeholder="192.168.100.xx">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <div class="field-label">Category</div>
+          <input type="text" id="pending-category" class="field-input" placeholder="e.g. Building 3">
+        </div>
+        <div class="field-group">
+          <div class="field-label">Sub-category</div>
+          <input type="text" id="pending-subcategory" class="field-input" placeholder="e.g. DBP2">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <div class="field-label">ONVIF username</div>
+          <input type="text" id="pending-username" class="field-input" value="admin">
+        </div>
+        <div class="field-group">
+          <div class="field-label">ONVIF password</div>
+          <input type="text" id="pending-password" class="field-input mono" placeholder="123456">
+        </div>
+      </div>
+    </div>
+    <div class="watch-footer">
+      <button class="btn-sm" onclick="closeModal('pending-modal')">Cancel</button>
+      <button class="btn-sm" id="pending-dismiss-btn" onclick="dismissPending()" style="border-color:rgba(239,68,68,.4);color:var(--red);">Dismiss</button>
+      <button class="btn-sm primary" id="pending-save-btn" onclick="configurePending()">Configure</button>
     </div>
   </div>
 </div>
@@ -471,14 +603,15 @@ async function setVisible(name, visible) {
     const d = await res.json();
     if (d.success) {
       if (lbl) { lbl.textContent = visible ? 'Visible' : 'Hidden'; lbl.className = `toggle-label ${visible ? 'on' : ''}`; }
-      toast(`${name}: ${visible ? 'shown on dashboard' : 'hidden from dashboard'}`);
+      toast(`${name}: ${visible ? 'shown on camera dashboard' : 'hidden from camera dashboard'}`);
     } else { toast('Error: ' + (d.error || 'unknown')); }
   } catch { toast('Request failed'); }
 }
 
 /* ── Live view ─────────────────────────────────────────────────────── */
 function openLive(name) {
-  openVideo(`${name} — Live`, `/hls/${encodeURIComponent(name)}/index.m3u8`, true);
+  const liveUrl = _cameras[name]?.live_url || `/go2rtc/api/stream.mp4?src=${encodeURIComponent(name)}`;
+  openVideo(`${name} — Live`, liveUrl, false);
 }
 
 function openVideo(title, src, isHls) {
@@ -652,10 +785,90 @@ async function openEdit(name) {
     document.getElementById('edit-rtsp').value = cam.rtsp_url || '';
     document.getElementById('edit-onvif').value = cam.onvif_port || 80;
     document.getElementById('edit-segment').value = cam.segment_duration || 600;
+    const ROLES = ['Supervisor', 'Inspection', 'Lab', 'Ballistics', 'Maintenance', 'Selection', 'Operator'];
+    const RESTRICTED = ['SuperAdmin', 'Admin'];
+    const currentRoles = cam.allowed_roles || ['Supervisor'];
+    const wrap = document.getElementById('edit-roles-wrap');
+    // Restricted roles (SuperAdmin / Admin) shown first with a separator
+    const restrictedHtml = RESTRICTED.map(r => `
+      <label style="display:inline-flex;align-items:center;gap:5px;background:var(--bg3);border:1px solid var(--red);border-radius:99px;padding:4px 10px;cursor:pointer;font-size:.78rem;color:var(--red);" title="${r} only — hides this camera from all other roles">
+        <input type="checkbox" name="edit-role" value="${r}" ${currentRoles.includes(r) ? 'checked' : ''} style="accent-color:var(--red);width:auto;margin:0;padding:0;">
+        ${r} only
+      </label>`).join('');
+    const normalHtml = ROLES.map(r => `
+      <label style="display:inline-flex;align-items:center;gap:5px;background:var(--bg3);border:1px solid var(--border);border-radius:99px;padding:4px 10px;cursor:pointer;font-size:.78rem;color:var(--text2);">
+        <input type="checkbox" name="edit-role" value="${r}" ${currentRoles.includes(r) ? 'checked' : ''} style="accent-color:var(--blue);width:auto;margin:0;padding:0;">
+        ${r}
+      </label>`).join('');
+    wrap.innerHTML = restrictedHtml + '<div style="width:100%;height:1px;background:var(--border);margin:6px 0;"></div>' + normalHtml;
     const btn = document.getElementById('edit-save-btn');
     btn.disabled = false; btn.textContent = 'Save';
+    // Reset time section
+    document.getElementById('edit-cam-time').textContent = '—';
+    document.getElementById('edit-time-msg').style.display = 'none';
     document.getElementById('edit-modal').classList.add('open');
+    fetchCameraTime();
   } catch { toast('Failed to load camera config'); }
+}
+
+async function fetchCameraTime() {
+  const name = document.getElementById('edit-orig-name').value;
+  if (!name) return;
+  const el = document.getElementById('edit-cam-time');
+  const msg = document.getElementById('edit-time-msg');
+  el.textContent = 'Reading…';
+  msg.style.display = 'none';
+  try {
+    const r = await fetch(`/api/cameras/${encodeURIComponent(name)}/time`);
+    const d = await r.json();
+    if (!r.ok) { el.textContent = '—'; msg.textContent = d.error || 'Failed'; msg.style.color = 'var(--red)'; msg.style.display = ''; return; }
+    el.textContent = d.local;
+  } catch { el.textContent = '—'; }
+}
+
+async function syncCameraTime() {
+  const name = document.getElementById('edit-orig-name').value;
+  if (!name) return;
+  const btn = document.getElementById('edit-time-sync-btn');
+  const msg = document.getElementById('edit-time-msg');
+  btn.disabled = true; btn.textContent = 'Syncing…';
+  msg.style.display = 'none';
+  try {
+    const r = await fetch(`/api/cameras/${encodeURIComponent(name)}/time/sync`, { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) {
+      msg.textContent = d.error || 'Sync failed';
+      msg.style.color = 'var(--red)';
+    } else {
+      msg.textContent = `✓ Set to ${d.set_to}`;
+      msg.style.color = 'var(--green)';
+      document.getElementById('edit-cam-time').textContent = d.set_to;
+    }
+    msg.style.display = '';
+  } catch (e) {
+    msg.textContent = 'Sync failed: ' + e.message;
+    msg.style.color = 'var(--red)';
+    msg.style.display = '';
+  } finally {
+    btn.disabled = false; btn.textContent = '⏱ Sync to PC';
+  }
+}
+
+async function syncAllClocks() {
+  const btn = document.getElementById('sync-all-btn');
+  const names = Object.keys(_cameras).filter(n => _cameras[n]?.config?.onvif_port);
+  if (!names.length) { toast('No ONVIF cameras found'); return; }
+  btn.disabled = true; btn.textContent = '⏱ Syncing…';
+  let ok = 0, fail = 0;
+  for (const name of names) {
+    try {
+      const r = await fetch(`/api/cameras/${encodeURIComponent(name)}/time/sync`, { method: 'POST' });
+      if (r.ok) ok++; else fail++;
+    } catch { fail++; }
+  }
+  btn.disabled = false; btn.textContent = '⏱ Sync All Clocks';
+  if (fail === 0) toast(`✓ Synced ${ok} camera${ok !== 1 ? 's' : ''}`);
+  else toast(`Synced ${ok}, failed ${fail}`);
 }
 
 async function saveEdit() {
@@ -674,6 +887,7 @@ async function saveEdit() {
         rtsp_url:         document.getElementById('edit-rtsp').value.trim(),
         onvif_port:       parseInt(document.getElementById('edit-onvif').value) || 80,
         segment_duration: parseInt(document.getElementById('edit-segment').value) || 600,
+        allowed_roles:    Array.from(document.querySelectorAll('#edit-roles-wrap input[name="edit-role"]:checked')).map(cb => cb.value),
       }),
     });
     const d = await r.json();
@@ -706,6 +920,121 @@ document.getElementById('edit-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeModal('edit-modal');
 });
 
+/* ── Pending cameras ───────────────────────────────────────────────── */
+let _pendingList = [];
+
+async function loadPending() {
+  try {
+    const r = await fetch('/api/cameras/pending');
+    if (!r.ok) return;
+    _pendingList = await r.json();
+    renderPending();
+  } catch { }
+}
+
+async function manualAddCamera() {
+  const ip = document.getElementById('manual-cam-ip').value.trim();
+  if (!ip) { toast('Enter an IP address'); return; }
+  const r = await fetch('/api/cameras/pending/manual', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ip })
+  });
+  const data = await r.json();
+  if (!r.ok) { toast(data.error || 'Failed'); return; }
+  document.getElementById('manual-cam-ip').value = '';
+  toast('Camera queued — click Configure to set it up');
+  loadPending();
+}
+
+function renderPending() {
+  const wrap  = document.getElementById('pending-wrap');
+  const chips = document.getElementById('pending-chips');
+  const badge = document.getElementById('pending-count');
+
+  if (!_pendingList.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  badge.textContent  = _pendingList.length;
+
+  chips.innerHTML = _pendingList.map(p => `
+    <div class="pending-chip">
+      <div>
+        <div class="pending-chip-ip">${esc(p.ip)}</div>
+        ${p.device_name ? `<div class="pending-chip-name">${esc(p.device_name)}</div>` : ''}
+      </div>
+      <button class="btn-xs primary" onclick="openPendingModal(${esc(JSON.stringify(p))})">Configure</button>
+    </div>`).join('');
+}
+
+function openPendingModal(p) {
+  document.getElementById('pending-current-ip').value     = p.ip;
+  document.getElementById('pending-onvif-port').value     = p.onvif_port || 80;
+  document.getElementById('pending-discovered-ip').textContent = p.ip;
+  document.getElementById('pending-device-name').textContent   = p.device_name || '';
+  document.getElementById('pending-name').value       = '';
+  document.getElementById('pending-static-ip').value  = p.ip;
+  document.getElementById('pending-category').value   = '';
+  document.getElementById('pending-subcategory').value = '';
+  document.getElementById('pending-username').value   = 'admin';
+  document.getElementById('pending-password').value   = '';
+  const btn = document.getElementById('pending-save-btn');
+  btn.disabled = false; btn.textContent = 'Configure';
+  document.getElementById('pending-modal').classList.add('open');
+}
+
+async function configurePending() {
+  const btn       = document.getElementById('pending-save-btn');
+  const currentIp = document.getElementById('pending-current-ip').value;
+  const staticIp  = document.getElementById('pending-static-ip').value.trim();
+  const name      = document.getElementById('pending-name').value.trim();
+  if (!name)     { toast('Enter a camera name'); return; }
+  if (!staticIp) { toast('Enter a static IP'); return; }
+
+  btn.disabled = true; btn.textContent = 'Configuring…';
+  try {
+    const r = await fetch('/api/cameras/pending/configure', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        current_ip:  currentIp,
+        static_ip:   staticIp,
+        name,
+        category:    document.getElementById('pending-category').value.trim(),
+        subcategory: document.getElementById('pending-subcategory').value.trim(),
+        onvif_port:  parseInt(document.getElementById('pending-onvif-port').value) || 80,
+        username:    document.getElementById('pending-username').value.trim(),
+        password:    document.getElementById('pending-password').value,
+      }),
+    });
+    const d = await r.json();
+    if (r.ok && d.success) {
+      toast(`${name} configured — camera will reboot to ${staticIp}`);
+      closeModal('pending-modal');
+      loadAll();
+    } else {
+      toast('Error: ' + (d.error || 'unknown'));
+      btn.disabled = false; btn.textContent = 'Configure';
+    }
+  } catch {
+    toast('Request failed');
+    btn.disabled = false; btn.textContent = 'Configure';
+  }
+}
+
+async function dismissPending() {
+  const ip = document.getElementById('pending-current-ip').value;
+  try {
+    await fetch(`/api/cameras/pending/${encodeURIComponent(ip)}`, { method: 'DELETE' });
+    toast(`Dismissed ${ip}`);
+    closeModal('pending-modal');
+    loadPending();
+  } catch { toast('Request failed'); }
+}
+
+document.getElementById('pending-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal('pending-modal');
+});
+
 async function loadAll() {
   const [,, layout] = await Promise.all([
     load(),
@@ -714,6 +1043,7 @@ async function loadAll() {
   ]);
   _layout = layout || {};
   renderOrganizer();
+  loadPending();
 }
 loadAll();
 setInterval(loadAll, 5000);
@@ -732,7 +1062,7 @@ function showCtxMenu(e, name) {
   const hasRec  = !!_recSummary[name];
 
   document.getElementById('ctx-cam-label').textContent = name;
-  document.getElementById('ctx-vis-btn').textContent  = visible ? '🔒 Hide from Dashboard' : '👁 Show on Dashboard';
+  document.getElementById('ctx-vis-btn').textContent  = visible ? '🔒 Hide from Camera Dashboard' : '👁 Show on Camera Dashboard';
   document.getElementById('ctx-rec-btn').style.opacity = hasRec ? '1' : '.4';
   document.getElementById('ctx-del-btn').style.opacity = hasRec ? '1' : '.4';
 
